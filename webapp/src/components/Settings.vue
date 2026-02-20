@@ -4,6 +4,7 @@
     <!-- Gallery Card -->
     <v-card class="mb-6">
       <v-tabs v-model="galleryTab" color="primary">
+        <v-tab value="immich">Immich</v-tab>
         <v-tab value="google_photos">Google Photos</v-tab>
         <v-tab value="synology_photos">Synology</v-tab>
       </v-tabs>
@@ -45,6 +46,7 @@
               density="compact"
               class="mb-4"
             >
+              <v-tab value="immich">Immich</v-tab>
               <v-tab value="google">Google</v-tab>
               <v-tab value="synology_photos">Synology</v-tab>
               <v-tab value="telegram">Telegram</v-tab>
@@ -487,6 +489,113 @@
                       @click="testSynology"
                     >
                       Test Connection & Login
+                    </v-btn>
+                  </div>
+                </v-card-text>
+              </v-window-item>
+
+              <!-- Immich -->
+              <v-window-item value="immich">
+                <v-card-text>
+                  <div v-if="form.immich_url && form.immich_api_key">
+                    <v-alert
+                      type="success"
+                      variant="tonal"
+                      class="mb-4"
+                      density="compact"
+                      icon="mdi-check-circle"
+                    >
+                      Connected to Immich ({{ form.immich_url }})
+                      <div
+                        v-if="immichStore.count !== null"
+                        class="text-caption mt-1"
+                      >
+                        {{ immichStore.count }} photo{{
+                          immichStore.count !== 1 ? 's' : ''
+                        }}
+                        synced
+                      </div>
+                    </v-alert>
+
+                    <v-text-field
+                      :model-value="getImageUrl('immich')"
+                      label="Image Endpoint URL (for firmware config)"
+                      readonly
+                      variant="outlined"
+                      density="compact"
+                      append-inner-icon="mdi-content-copy"
+                      @click:append-inner="
+                        copyToClipboard(getImageUrl('immich'))
+                      "
+                    ></v-text-field>
+
+                    <v-row class="mt-2">
+                      <v-col cols="12" sm="8">
+                        <v-select
+                          v-model="form.immich_album_id"
+                          :items="immichAlbumOptions"
+                          item-title="name"
+                          item-value="id"
+                          label="Sync Album"
+                          variant="outlined"
+                          density="compact"
+                          hint="Select an album to sync"
+                          persistent-hint
+                        ></v-select>
+                      </v-col>
+                      <v-col cols="12" sm="4">
+                        <v-btn
+                          block
+                          variant="outlined"
+                          @click="loadImmichAlbums"
+                          >Refresh Albums</v-btn
+                        >
+                      </v-col>
+                    </v-row>
+
+                    <v-btn color="grey-darken-1" class="mt-4 mb-4" @click="save"
+                      >Save Album Selection</v-btn
+                    >
+
+                    <div class="d-flex flex-wrap ga-2">
+                      <v-btn color="primary" @click="syncImmich"
+                        >Sync Now</v-btn
+                      >
+                      <v-btn color="warning" @click="clearImmich"
+                        >Clear All Photos</v-btn
+                      >
+                      <v-btn
+                        color="error"
+                        variant="text"
+                        @click="disconnectImmich"
+                        >Disconnect</v-btn
+                      >
+                    </div>
+                  </div>
+
+                  <div v-else>
+                    <v-text-field
+                      v-model="form.immich_url"
+                      label="Immich Server URL"
+                      placeholder="http://192.168.1.10:2283"
+                      variant="outlined"
+                      class="mb-2"
+                    ></v-text-field>
+
+                    <v-text-field
+                      v-model="form.immich_api_key"
+                      label="API Key"
+                      type="password"
+                      variant="outlined"
+                      class="mb-4"
+                    ></v-text-field>
+
+                    <v-btn
+                      color="primary"
+                      :disabled="!form.immich_url || !form.immich_api_key"
+                      @click="testImmich"
+                    >
+                      Test Connection & Connect
                     </v-btn>
                   </div>
                 </v-card-text>
@@ -1339,6 +1448,7 @@
 import { onMounted, reactive, ref, computed, watch } from 'vue';
 import { useSettingsStore } from '../stores/settings';
 import { useSynologyStore } from '../stores/synology';
+import { useImmichStore } from '../stores/immich';
 import { useAuthStore } from '../stores/auth';
 import { useGalleryStore } from '../stores/gallery';
 import {
@@ -1365,11 +1475,12 @@ import ConfirmDialog from './ConfirmDialog.vue';
 
 const store = useSettingsStore();
 const synologyStore = useSynologyStore();
+const immichStore = useImmichStore();
 const authStore = useAuthStore();
 const galleryStore = useGalleryStore();
 const activeMainTab = ref('devices');
-const activeDataSourceTab = ref('google');
-const galleryTab = ref('google_photos');
+const activeDataSourceTab = ref('immich');
+const galleryTab = ref('immich');
 const confirmDialog = ref();
 
 // Device Binding State
@@ -1827,6 +1938,8 @@ watch(galleryTab, (val) => {
     galleryStore.setSource('google_photos');
   } else if (val === 'synology_photos') {
     galleryStore.setSource('synology_photos');
+  } else if (val === 'immich') {
+    galleryStore.setSource('immich');
   }
 });
 
@@ -1858,6 +1971,10 @@ const form = reactive({
   synology_album_id: '',
   synology_space: 'personal',
   albums: [] as any[],
+  immich_url: '',
+  immich_api_key: '',
+  immich_album_id: '',
+  immich_albums: [] as any[],
   telegram_bot_token: '',
   telegram_push_enabled: false,
   telegram_target_device_id: [] as number[],
@@ -1868,6 +1985,13 @@ const form = reactive({
 
 const synologyAlbumOptions = computed(() => {
   return [{ id: '', name: 'All Photos' }, ...form.albums];
+});
+
+const immichAlbumOptions = computed(() => {
+  return [
+    { id: '', name: 'All Photos' },
+    ...form.immich_albums.map((a: any) => ({ id: a.id, name: a.albumName })),
+  ];
 });
 
 // Helper to show snackbar
@@ -1911,6 +2035,9 @@ onMounted(async () => {
       ? parseInt(store.settings.synology_album_id)
       : '',
     synology_sid: store.settings.synology_sid || '',
+    immich_url: store.settings.immich_url || '',
+    immich_api_key: store.settings.immich_api_key || '',
+    immich_album_id: store.settings.immich_album_id || '',
     openai_api_key: store.settings.openai_api_key || '',
     google_api_key: store.settings.google_api_key || '',
   });
@@ -1927,6 +2054,17 @@ onMounted(async () => {
   // Fetch Synology photo count if connected
   if (form.synology_sid) {
     await synologyStore.fetchCount();
+  }
+
+  // Fetch Immich photo count and albums if connected
+  if (form.immich_url && form.immich_api_key) {
+    await immichStore.fetchCount();
+    try {
+      await immichStore.fetchAlbums();
+      form.immich_albums = immichStore.albums;
+    } catch (e) {
+      // Non-fatal: album names will be shown as UUIDs until user clicks Refresh
+    }
   }
 
   await authStore.fetchTokens();
@@ -1973,6 +2111,9 @@ const saveSettingsInternal = async () => {
     synology_skip_cert: String(form.synology_skip_cert),
     synology_space: form.synology_space,
     synology_album_id: String(form.synology_album_id),
+    immich_url: form.immich_url,
+    immich_api_key: form.immich_api_key,
+    immich_album_id: form.immich_album_id,
     openai_api_key: form.openai_api_key,
     google_api_key: form.google_api_key,
   });
@@ -2133,6 +2274,82 @@ const clearSynology = async () => {
     await api.post('/synology/clear');
     showMessage('All Synology photos cleared from database.');
     await synologyStore.fetchCount();
+  } catch (e: any) {
+    showMessage(
+      'Clear Failed: ' + (e.response?.data?.error || e.message),
+      true
+    );
+  }
+};
+
+const testImmich = async () => {
+  await saveSettingsInternal();
+  try {
+    await immichStore.testConnection();
+    showMessage('Connection Successful!');
+  } catch (e: any) {
+    showMessage(
+      'Connection Failed: ' + (e.response?.data?.error || e.message),
+      true
+    );
+  }
+};
+
+const disconnectImmich = async () => {
+  if (
+    !(await confirmDialog.value.open(
+      'Are you sure you want to disconnect Immich?'
+    ))
+  )
+    return;
+  form.immich_url = '';
+  form.immich_api_key = '';
+  form.immich_album_id = '';
+  form.immich_albums = [];
+  await saveSettingsInternal();
+  immichStore.count = 0;
+  immichStore.albums = [];
+  showMessage('Disconnected from Immich.');
+};
+
+const loadImmichAlbums = async () => {
+  await saveSettingsInternal();
+  try {
+    await immichStore.fetchAlbums();
+    form.immich_albums = immichStore.albums;
+    showMessage('Albums loaded!');
+  } catch (e: any) {
+    showMessage(
+      'Failed to load albums: ' + (e.response?.data?.error || e.message),
+      true
+    );
+  }
+};
+
+const syncImmich = async () => {
+  await saveSettingsInternal();
+  try {
+    await immichStore.sync();
+    showMessage('Sync completed successfully!');
+  } catch (e: any) {
+    showMessage(
+      'Sync Failed: ' + (e.response?.data?.error || 'Unknown error'),
+      true
+    );
+  }
+};
+
+const clearImmich = async () => {
+  if (
+    !(await confirmDialog.value.open(
+      'Are you sure you want to clear all Immich photo references?'
+    ))
+  )
+    return;
+  try {
+    await api.post('/immich/clear');
+    showMessage('All Immich photos cleared from database.');
+    await immichStore.fetchCount();
   } catch (e: any) {
     showMessage(
       'Clear Failed: ' + (e.response?.data?.error || e.message),

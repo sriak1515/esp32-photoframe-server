@@ -1,0 +1,29 @@
+package immich
+
+// Album represents an Immich album
+type Album struct {
+	ID         string `json:"id"`
+	AlbumName  string `json:"albumName"`
+	AssetCount int    `json:"assetCount"`
+}
+
+// ExifInfo holds EXIF metadata for an asset
+type ExifInfo struct {
+	ExifImageWidth  int `json:"exifImageWidth"`
+	ExifImageHeight int `json:"exifImageHeight"`
+}
+
+// Asset represents an Immich media asset
+type Asset struct {
+	ID               string   `json:"id"`
+	Type             string   `json:"type"` // "IMAGE", "VIDEO"
+	OriginalFileName string   `json:"originalFileName"`
+	ExifInfo         ExifInfo `json:"exifInfo"`
+}
+
+// AlbumDetail is the full album response including assets
+type AlbumDetail struct {
+	ID        string  `json:"id"`
+	AlbumName string  `json:"albumName"`
+	Assets    []Asset `json:"assets"`
+}

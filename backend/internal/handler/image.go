@@ -36,6 +36,7 @@ type ImageHandlerDeps struct {
 	Google         *googlephotos.Client
 	CalendarGoogle *googlephotos.Client
 	Synology       *service.SynologyService
+	Immich         *service.ImmichService
 	AIGen          *service.AIGenerationService
 	Weather        *weather.Client
 	Calendar       *gcalendar.Client
@@ -50,6 +51,7 @@ type ImageHandler struct {
 	google         *googlephotos.Client
 	calendarGoogle *googlephotos.Client
 	synology       *service.SynologyService
+	immich         *service.ImmichService
 	aiGen          *service.AIGenerationService
 	weather        *weather.Client
 	calendar       *gcalendar.Client
@@ -65,6 +67,7 @@ func NewImageHandler(deps ImageHandlerDeps) *ImageHandler {
 		google:         deps.Google,
 		calendarGoogle: deps.CalendarGoogle,
 		synology:       deps.Synology,
+		immich:         deps.Immich,
 		aiGen:          deps.AIGen,
 		weather:        deps.Weather,
 		calendar:       deps.Calendar,
@@ -617,7 +620,7 @@ func (h *ImageHandler) fetchRandomPhoto(sourceFilter string, excludeIDs []uint, 
 // earlyResult (the caller should return immediately).
 func (h *ImageHandler) applySourceFilter(query *gorm.DB, sourceFilter string, deviceID *uint) (*gorm.DB, image.Image, error) {
 	switch sourceFilter {
-	case model.SourceGooglePhotos, model.SourceSynologyPhotos, model.SourceTelegram:
+	case model.SourceGooglePhotos, model.SourceSynologyPhotos, model.SourceTelegram, model.SourceImmich:
 		return query.Where("source = ?", sourceFilter), nil, nil
 	case model.SourceURLProxy:
 		img, _, err := h.fetchRandomURLProxy(deviceID)
@@ -647,11 +650,29 @@ func (h *ImageHandler) fetchRandomURLProxy(deviceID *uint) (image.Image, uint, e
 	return h.fetchURLPhoto(urlSource.URL)
 }
 
+// fetchImmichPhoto retrieves the photo from Immich Service
+func (h *ImageHandler) fetchImmichPhoto(item model.Image) (image.Image, uint, error) {
+	data, err := h.immich.GetPhoto(item.ImmichAssetID, "preview")
+	if err != nil {
+		return nil, 0, err
+	}
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, 0, err
+	}
+	return img, item.ID, nil
+}
+
 // loadImageFromRecord loads an image from a database record, handling both
-// local files and Synology photos.
+// local files and Synology/Immich photos.
 func (h *ImageHandler) loadImageFromRecord(item model.Image) (image.Image, error) {
 	if item.Source == model.SourceSynologyPhotos {
 		img, _, err := h.fetchSynologyPhoto(item)
+		return img, err
+	}
+
+	if item.Source == model.SourceImmich {
+		img, _, err := h.fetchImmichPhoto(item)
 		return img, err
 	}
 

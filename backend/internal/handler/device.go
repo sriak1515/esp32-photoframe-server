@@ -19,15 +19,17 @@ import (
 type DeviceHandler struct {
 	deviceService   *service.DeviceService
 	synologyService *service.SynologyService
+	immichService   *service.ImmichService
 	authService     *service.AuthService
 	settingsService *service.SettingsService
 	db              *gorm.DB
 }
 
-func NewDeviceHandler(deviceService *service.DeviceService, synologyService *service.SynologyService, authService *service.AuthService, settingsService *service.SettingsService, db *gorm.DB) *DeviceHandler {
+func NewDeviceHandler(deviceService *service.DeviceService, synologyService *service.SynologyService, immichService *service.ImmichService, authService *service.AuthService, settingsService *service.SettingsService, db *gorm.DB) *DeviceHandler {
 	return &DeviceHandler{
 		deviceService:   deviceService,
 		synologyService: synologyService,
+		immichService:   immichService,
 		authService:     authService,
 		settingsService: settingsService,
 		db:              db,
@@ -267,6 +269,26 @@ func (h *DeviceHandler) PushToDevice(c echo.Context) error {
 				return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create temp file"})
 			}
 			defer os.Remove(tmp.Name()) // Clean up
+			tempFile = tmp.Name()
+
+			if _, err := tmp.Write(data); err != nil {
+				tmp.Close()
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to write temp file"})
+			}
+			tmp.Close()
+			imagePath = tempFile
+		} else if img.Source == model.SourceImmich {
+			// Download from Immich to temporary file
+			data, err := h.immichService.GetPhoto(img.ImmichAssetID, "preview")
+			if err != nil {
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to download immich photo: %v", err)})
+			}
+
+			tmp, err := ioutil.TempFile("", "immich_push_*.jpg")
+			if err != nil {
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create temp file"})
+			}
+			defer os.Remove(tmp.Name())
 			tempFile = tmp.Name()
 
 			if _, err := tmp.Write(data); err != nil {
