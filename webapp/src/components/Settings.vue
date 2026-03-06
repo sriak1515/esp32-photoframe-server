@@ -397,35 +397,31 @@
                           label="Sync Album"
                           variant="outlined"
                           density="compact"
-                          hint="Select an album to limit sync"
+                          hint="Select an album to sync photos from"
                           persistent-hint
+                          :rules="[(v: any) => !!v || 'Album is required']"
                         ></v-select>
                       </v-col>
                       <v-col cols="12" sm="4">
-                        <v-btn block variant="outlined" :loading="synologyStore.loading" @click="loadAlbums"
+                        <v-btn
+                          block
+                          variant="outlined"
+                          :loading="synologyStore.loading"
+                          @click="loadAlbums"
                           >Refresh Albums</v-btn
                         >
                       </v-col>
                     </v-row>
 
-                    <v-select
-                      v-model="form.synology_space"
-                      :items="[
-                        { title: 'Personal Space', value: 'personal' },
-                        { title: 'Shared Space', value: 'shared' },
-                      ]"
-                      label="Photo Space"
-                      variant="outlined"
-                      density="compact"
-                      class="mt-4"
-                    ></v-select>
-
-                    <v-btn color="grey-darken-1" class="mt-2 mb-4" @click="save"
+                    <v-btn color="grey-darken-1" class="mt-4 mb-4" @click="save"
                       >Save Album Selection</v-btn
                     >
 
                     <div class="d-flex flex-wrap ga-2">
-                      <v-btn color="primary" :loading="synologyStore.loading" @click="syncSynology"
+                      <v-btn
+                        color="primary"
+                        :loading="synologyStore.loading"
+                        @click="syncSynology"
                         >Sync Now</v-btn
                       >
                       <v-btn color="warning" @click="clearSynology"
@@ -540,8 +536,9 @@
                           label="Sync Album"
                           variant="outlined"
                           density="compact"
-                          hint="Select an album to sync"
+                          hint="Select an album to sync photos from"
                           persistent-hint
+                          :rules="[(v: any) => !!v || 'Album is required']"
                         ></v-select>
                       </v-col>
                       <v-col cols="12" sm="4">
@@ -560,7 +557,10 @@
                     >
 
                     <div class="d-flex flex-wrap ga-2">
-                      <v-btn color="primary" :loading="immichStore.loading" @click="syncImmich"
+                      <v-btn
+                        color="primary"
+                        :loading="immichStore.loading"
+                        @click="syncImmich"
                         >Sync Now</v-btn
                       >
                       <v-btn color="warning" @click="clearImmich"
@@ -2000,7 +2000,6 @@ const form = reactive({
   synology_skip_cert: false,
   synology_otp_code: '',
   synology_album_id: '',
-  synology_space: 'personal',
   albums: [] as any[],
   immich_url: '',
   immich_api_key: '',
@@ -2015,14 +2014,11 @@ const form = reactive({
 });
 
 const synologyAlbumOptions = computed(() => {
-  return [{ id: '', name: 'All Photos' }, ...form.albums];
+  return form.albums;
 });
 
 const immichAlbumOptions = computed(() => {
-  return [
-    { id: '', name: 'All Photos' },
-    ...form.immich_albums.map((a: any) => ({ id: a.id, name: a.albumName })),
-  ];
+  return form.immich_albums.map((a: any) => ({ id: a.id, name: a.albumName }));
 });
 
 // Helper to show snackbar
@@ -2061,7 +2057,6 @@ onMounted(async () => {
     synology_account: store.settings.synology_account || '',
     synology_password: store.settings.synology_password || '',
     synology_skip_cert: store.settings.synology_skip_cert === 'true',
-    synology_space: store.settings.synology_space || 'personal',
     synology_album_id: store.settings.synology_album_id
       ? parseInt(store.settings.synology_album_id)
       : '',
@@ -2141,7 +2136,6 @@ const saveSettingsInternal = async () => {
     synology_account: form.synology_account,
     synology_password: form.synology_password,
     synology_skip_cert: String(form.synology_skip_cert),
-    synology_space: form.synology_space,
     synology_album_id: String(form.synology_album_id),
     immich_url: form.immich_url,
     immich_api_key: form.immich_api_key,

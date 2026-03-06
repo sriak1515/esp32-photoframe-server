@@ -31,10 +31,8 @@ type Image struct {
 	Status          string         `json:"status"` // pending, shown
 	Source          string         `json:"source"` // "local", "google_photos", "synology_photos"
 	SynologyPhotoID int            `json:"synology_id"`
-	SynologySpace   string         `json:"synology_space"`   // "personal" or "shared"
-	ThumbnailKey    string         `json:"thumbnail_key"`    // Cache key for Synology
-	SynologyUnitID  int            `json:"synology_unit_id"` // unit_id for Personal album thumbnails
-	ImmichAssetID   string         `json:"immich_asset_id"`  // UUID for Immich assets
+	ThumbnailKey    string         `json:"thumbnail_key"`   // Cache key for Synology
+	ImmichAssetID   string         `json:"immich_asset_id"` // UUID for Immich assets
 	CreatedAt       time.Time      `json:"created_at"`
 	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
 }
