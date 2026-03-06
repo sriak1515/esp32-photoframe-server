@@ -304,64 +304,72 @@ func (s *DeviceService) PushToHost(device *model.Device, imagePath string, extra
 	}
 
 	// 5. Render layout (photo + overlay + calendar)
-	var weatherData *weather.CurrentWeather
-	var deviceTimezone string
-	if device.ShowWeather && device.WeatherLat != 0 && device.WeatherLon != 0 {
-		latStr := fmt.Sprintf("%f", device.WeatherLat)
-		lonStr := fmt.Sprintf("%f", device.WeatherLon)
-		var weatherErr error
-		weatherData, weatherErr = s.weather.GetWeather(latStr, lonStr)
-		if weatherErr != nil {
-			log.Printf("Failed to fetch weather data for device %d: %v", device.ID, weatherErr)
-		}
-		if weatherData != nil {
-			deviceTimezone = weatherData.Timezone
-		}
-	}
+	needsOverlay := device.ShowDate || device.ShowWeather || device.ShowCalendar
+	var finalImg image.Image
 
-	var events []gcalendar.Event
-	if device.ShowCalendar && s.calendar != nil && s.calendarGoogle != nil {
-		httpClient, err := s.calendarGoogle.GetClient()
-		if err == nil {
-			calendarID := device.CalendarID
-			if calendarID == "" {
-				calendarID = "primary"
+	if needsOverlay {
+		var weatherData *weather.CurrentWeather
+		var deviceTimezone string
+		if device.ShowWeather && device.WeatherLat != 0 && device.WeatherLon != 0 {
+			latStr := fmt.Sprintf("%f", device.WeatherLat)
+			lonStr := fmt.Sprintf("%f", device.WeatherLon)
+			var weatherErr error
+			weatherData, weatherErr = s.weather.GetWeather(latStr, lonStr)
+			if weatherErr != nil {
+				log.Printf("Failed to fetch weather data for device %d: %v", device.ID, weatherErr)
 			}
-			var calErr error
-			events, calErr = s.calendar.GetTodayEvents(httpClient, calendarID, deviceTimezone)
-			if calErr != nil {
-				log.Printf("Failed to fetch calendar events for device %d: %v", device.ID, calErr)
+			if weatherData != nil {
+				deviceTimezone = weatherData.Timezone
 			}
 		}
-	}
 
-	layout := device.Layout
-	if layout == "" {
-		layout = model.LayoutPhotoOverlay
-	}
-	displayMode := device.DisplayMode
-	if displayMode == "" {
-		displayMode = "cover"
-	}
+		var events []gcalendar.Event
+		if device.ShowCalendar && s.calendar != nil && s.calendarGoogle != nil {
+			httpClient, err := s.calendarGoogle.GetClient()
+			if err == nil {
+				calendarID := device.CalendarID
+				if calendarID == "" {
+					calendarID = "primary"
+				}
+				var calErr error
+				events, calErr = s.calendar.GetTodayEvents(httpClient, calendarID, deviceTimezone)
+				if calErr != nil {
+					log.Printf("Failed to fetch calendar events for device %d: %v", device.ID, calErr)
+				}
+			}
+		}
 
-	finalImg, err := s.renderer.Render(RenderOptions{
-		Layout:       layout,
-		DisplayMode:  displayMode,
-		Width:        logicalW,
-		Height:       logicalH,
-		NativeWidth:  nativeW,
-		NativeHeight: nativeH,
-		Photo:        srcImg,
-		ShowDate:     device.ShowDate,
-		ShowWeather:  device.ShowWeather,
-		Weather:      weatherData,
-		ShowCalendar: device.ShowCalendar,
-		Events:       events,
-		Timezone:     deviceTimezone,
-		DateFormat:   device.DateFormat,
-	})
-	if err != nil {
-		return fmt.Errorf("render failed: %w", err)
+		layout := device.Layout
+		if layout == "" {
+			layout = model.LayoutPhotoOverlay
+		}
+		displayMode := device.DisplayMode
+		if displayMode == "" {
+			displayMode = "cover"
+		}
+
+		var renderErr error
+		finalImg, renderErr = s.renderer.Render(RenderOptions{
+			Layout:       layout,
+			DisplayMode:  displayMode,
+			Width:        logicalW,
+			Height:       logicalH,
+			NativeWidth:  nativeW,
+			NativeHeight: nativeH,
+			Photo:        srcImg,
+			ShowDate:     device.ShowDate,
+			ShowWeather:  device.ShowWeather,
+			Weather:      weatherData,
+			ShowCalendar: device.ShowCalendar,
+			Events:       events,
+			Timezone:     deviceTimezone,
+			DateFormat:   device.DateFormat,
+		})
+		if renderErr != nil {
+			return fmt.Errorf("render failed: %w", renderErr)
+		}
+	} else {
+		finalImg = srcImg
 	}
 
 	// 6. Process for E-Paper

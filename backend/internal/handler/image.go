@@ -273,57 +273,63 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 	}
 
 	// 2. Render layout (photo + overlay + calendar)
-	// Fetch weather data if needed
-	var weatherData *weather.CurrentWeather
-	var deviceTimezone string
-	if showWeather && lat != 0 && lon != 0 {
-		latStr := fmt.Sprintf("%f", lat)
-		lonStr := fmt.Sprintf("%f", lon)
-		var weatherErr error
-		weatherData, weatherErr = h.weather.GetWeather(latStr, lonStr)
-		if weatherErr != nil {
-			log.Printf("Failed to fetch weather data: %v", weatherErr)
-		}
-		if weatherData != nil {
-			deviceTimezone = weatherData.Timezone
-		}
-	}
+	needsOverlay := showDate || showWeather || showCalendar
+	var imgWithOverlay image.Image
 
-	// Fetch calendar events if enabled
-	var events []gcalendar.Event
-	if showCalendar && h.calendar != nil && h.calendarGoogle != nil {
-		httpClient, err := h.calendarGoogle.GetClient()
-		if err == nil {
-			calendarID := device.CalendarID
-			if calendarID == "" {
-				calendarID = "primary"
+	if needsOverlay {
+		var weatherData *weather.CurrentWeather
+		var deviceTimezone string
+		if showWeather && lat != 0 && lon != 0 {
+			latStr := fmt.Sprintf("%f", lat)
+			lonStr := fmt.Sprintf("%f", lon)
+			var weatherErr error
+			weatherData, weatherErr = h.weather.GetWeather(latStr, lonStr)
+			if weatherErr != nil {
+				log.Printf("Failed to fetch weather data: %v", weatherErr)
 			}
-			var calErr error
-			events, calErr = h.calendar.GetTodayEvents(httpClient, calendarID, deviceTimezone)
-			if calErr != nil {
-				log.Printf("Failed to fetch calendar events: %v", calErr)
+			if weatherData != nil {
+				deviceTimezone = weatherData.Timezone
 			}
 		}
-	}
 
-	imgWithOverlay, err := h.renderer.Render(service.RenderOptions{
-		Layout:       layout,
-		DisplayMode:  displayMode,
-		Width:        logicalW,
-		Height:       logicalH,
-		NativeWidth:  nativeW,
-		NativeHeight: nativeH,
-		Photo:        img,
-		ShowDate:     showDate,
-		ShowWeather:  showWeather,
-		Weather:      weatherData,
-		ShowCalendar: showCalendar,
-		Events:       events,
-		Timezone:     deviceTimezone,
-		DateFormat:   device.DateFormat,
-	})
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "render failed: " + err.Error()})
+		var events []gcalendar.Event
+		if showCalendar && h.calendar != nil && h.calendarGoogle != nil {
+			httpClient, err := h.calendarGoogle.GetClient()
+			if err == nil {
+				calendarID := device.CalendarID
+				if calendarID == "" {
+					calendarID = "primary"
+				}
+				var calErr error
+				events, calErr = h.calendar.GetTodayEvents(httpClient, calendarID, deviceTimezone)
+				if calErr != nil {
+					log.Printf("Failed to fetch calendar events: %v", calErr)
+				}
+			}
+		}
+
+		var renderErr error
+		imgWithOverlay, renderErr = h.renderer.Render(service.RenderOptions{
+			Layout:       layout,
+			DisplayMode:  displayMode,
+			Width:        logicalW,
+			Height:       logicalH,
+			NativeWidth:  nativeW,
+			NativeHeight: nativeH,
+			Photo:        img,
+			ShowDate:     showDate,
+			ShowWeather:  showWeather,
+			Weather:      weatherData,
+			ShowCalendar: showCalendar,
+			Events:       events,
+			Timezone:     deviceTimezone,
+			DateFormat:   device.DateFormat,
+		})
+		if renderErr != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "render failed: " + renderErr.Error()})
+		}
+	} else {
+		imgWithOverlay = img
 	}
 
 	// 3. Tone Mapping + Thumbnail (CLI)
