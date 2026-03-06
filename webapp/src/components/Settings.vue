@@ -400,6 +400,7 @@
                           hint="Select an album to sync photos from"
                           persistent-hint
                           :rules="[(v: any) => !!v || 'Album is required']"
+                          @update:model-value="saveSettingsInternal()"
                         ></v-select>
                       </v-col>
                       <v-col cols="12" sm="4">
@@ -413,11 +414,7 @@
                       </v-col>
                     </v-row>
 
-                    <v-btn color="grey-darken-1" class="mt-4 mb-4" @click="save"
-                      >Save Album Selection</v-btn
-                    >
-
-                    <div class="d-flex flex-wrap ga-2">
+                    <div class="d-flex flex-wrap ga-2 mt-4">
                       <v-btn
                         color="primary"
                         :loading="synologyStore.loading"
@@ -539,6 +536,7 @@
                           hint="Select an album to sync photos from"
                           persistent-hint
                           :rules="[(v: any) => !!v || 'Album is required']"
+                          @update:model-value="saveSettingsInternal()"
                         ></v-select>
                       </v-col>
                       <v-col cols="12" sm="4">
@@ -552,11 +550,7 @@
                       </v-col>
                     </v-row>
 
-                    <v-btn color="grey-darken-1" class="mt-4 mb-4" @click="save"
-                      >Save Album Selection</v-btn
-                    >
-
-                    <div class="d-flex flex-wrap ga-2">
+                    <div class="d-flex flex-wrap ga-2 mt-4">
                       <v-btn
                         color="primary"
                         :loading="immichStore.loading"
