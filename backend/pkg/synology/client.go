@@ -1,17 +1,17 @@
 package synology
 
 import (
-	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/aitjcize/esp32-photoframe-server/backend/pkg/mdns"
 )
 
 type Client struct {
@@ -30,49 +30,7 @@ func NewClient(baseURL, account, password string, insecure bool) (*Client, error
 		return nil, err
 	}
 
-	// Use system resolver for mDNS (.local) and prefer IPv4 to avoid
-	// link-local IPv6 issues
-	resolver := &net.Resolver{PreferGo: false}
-	dialer := &net.Dialer{
-		Timeout:   30 * time.Second,
-		KeepAlive: 30 * time.Second,
-	}
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			host, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				return dialer.DialContext(ctx, network, addr)
-			}
-			ips, err := resolver.LookupHost(ctx, host)
-			if err != nil {
-				return nil, err
-			}
-			var lastErr error
-			for _, ip := range ips {
-				if strings.Contains(ip, ".") {
-					conn, err := dialer.DialContext(ctx, "tcp4", net.JoinHostPort(ip, port))
-					if err == nil {
-						return conn, nil
-					}
-					lastErr = err
-				}
-			}
-			for _, ip := range ips {
-				conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip, port))
-				if err == nil {
-					return conn, nil
-				}
-				lastErr = err
-			}
-			if lastErr != nil {
-				return nil, lastErr
-			}
-			return nil, fmt.Errorf("no addresses found for %s", host)
-		},
-		MaxIdleConns:        100,
-		IdleConnTimeout:     90 * time.Second,
-		TLSHandshakeTimeout: 10 * time.Second,
-	}
+	transport := mdns.NewTransport()
 	if insecure {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
