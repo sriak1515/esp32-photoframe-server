@@ -11,6 +11,7 @@ type Album struct {
 type ExifInfo struct {
 	ExifImageWidth   int    `json:"exifImageWidth"`
 	ExifImageHeight  int    `json:"exifImageHeight"`
+	Orientation      string `json:"orientation"` // EXIF orientation e.g. "1", "6", "Rotate 90 CW"
 	DateTimeOriginal string `json:"dateTimeOriginal"`
 }
 
