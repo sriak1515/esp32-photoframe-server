@@ -106,6 +106,7 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 
 	enableCollage := false
 	showDate := false
+	showPhotoDate := false
 	showWeather := false
 	var lat, lon float64
 
@@ -116,6 +117,7 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 
 		enableCollage = device.EnableCollage
 		showDate = device.ShowDate
+		showPhotoDate = device.ShowPhotoDate
 		showWeather = device.ShowWeather
 		lat = device.WeatherLat
 		lon = device.WeatherLon
@@ -178,6 +180,7 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 
 	var img image.Image
 	var err error
+	var photoTakenAt *time.Time
 
 	// 1.5. Get Device History for Exclusion
 	var excludeIDs []uint
@@ -241,6 +244,14 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to fetch photo: " + err.Error()})
 	}
 
+	// Look up PhotoTakenAt from the first served image
+	if deviceFound && device.ShowPhotoDate && len(servedImageIDs) > 0 && servedImageIDs[0] != 0 {
+		var servedImg model.Image
+		if dbErr := h.db.Select("photo_taken_at").First(&servedImg, servedImageIDs[0]).Error; dbErr == nil {
+			photoTakenAt = servedImg.PhotoTakenAt
+		}
+	}
+
 	// 1.6. Record History
 	if deviceFound && len(servedImageIDs) > 0 {
 		go func(devID uint, imgIDs []uint) {
@@ -273,7 +284,7 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 	}
 
 	// 2. Render layout (photo + overlay + calendar)
-	needsOverlay := showDate || showWeather || showCalendar
+	needsOverlay := showDate || showPhotoDate || showWeather || showCalendar
 	var imgWithOverlay image.Image
 
 	if needsOverlay {
@@ -310,15 +321,17 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 
 		var renderErr error
 		imgWithOverlay, renderErr = h.renderer.Render(service.RenderOptions{
-			Layout:       layout,
-			DisplayMode:  displayMode,
-			Width:        logicalW,
-			Height:       logicalH,
-			NativeWidth:  nativeW,
-			NativeHeight: nativeH,
-			Photo:        img,
-			ShowDate:     showDate,
-			ShowWeather:  showWeather,
+			Layout:        layout,
+			DisplayMode:   displayMode,
+			Width:         logicalW,
+			Height:        logicalH,
+			NativeWidth:   nativeW,
+			NativeHeight:  nativeH,
+			Photo:         img,
+			ShowDate:      showDate,
+			ShowPhotoDate: showPhotoDate,
+			PhotoDate:     photoTakenAt,
+			ShowWeather:   showWeather,
 			Weather:      weatherData,
 			ShowCalendar: showCalendar,
 			Events:       events,

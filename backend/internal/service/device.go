@@ -60,7 +60,7 @@ func (s *DeviceService) ListDevices() ([]model.Device, error) {
 	return devices, nil
 }
 
-func (s *DeviceService) AddDevice(host string, useDeviceParameter, enableCollage, showDate, showWeather bool, weatherLat, weatherLon float64, layout string, displayMode string, showCalendar bool, calendarID string, dateFormat string) (*model.Device, error) {
+func (s *DeviceService) AddDevice(host string, useDeviceParameter, enableCollage, showDate, showPhotoDate, showWeather bool, weatherLat, weatherLon float64, layout string, displayMode string, showCalendar bool, calendarID string, dateFormat string) (*model.Device, error) {
 	sysInfo, err := s.pfClient.FetchSystemInfo(host)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch system info: %w", err)
@@ -104,6 +104,7 @@ func (s *DeviceService) AddDevice(host string, useDeviceParameter, enableCollage
 		UseDeviceParameter: useDeviceParameter,
 		EnableCollage:      enableCollage,
 		ShowDate:           showDate,
+		ShowPhotoDate:      showPhotoDate,
 		ShowWeather:        showWeather,
 		WeatherLat:         weatherLat,
 		WeatherLon:         weatherLon,
@@ -119,7 +120,7 @@ func (s *DeviceService) AddDevice(host string, useDeviceParameter, enableCollage
 	return device, nil
 }
 
-func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height int, orientation string, useDeviceParameter, enableCollage, showDate, showWeather bool, weatherLat, weatherLon float64, aiProvider, aiModel, aiPrompt string, layout string, displayMode string, showCalendar bool, calendarID string, dateFormat string) (*model.Device, error) {
+func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height int, orientation string, useDeviceParameter, enableCollage, showDate, showPhotoDate, showWeather bool, weatherLat, weatherLon float64, aiProvider, aiModel, aiPrompt string, layout string, displayMode string, showCalendar bool, calendarID string, dateFormat string) (*model.Device, error) {
 	var device model.Device
 	if err := s.db.First(&device, id).Error; err != nil {
 		return nil, errors.New("device not found")
@@ -170,6 +171,7 @@ func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height i
 	device.UseDeviceParameter = useDeviceParameter
 	device.EnableCollage = enableCollage
 	device.ShowDate = showDate
+	device.ShowPhotoDate = showPhotoDate
 	device.ShowWeather = showWeather
 	device.WeatherLat = weatherLat
 	device.WeatherLon = weatherLon
@@ -304,7 +306,7 @@ func (s *DeviceService) PushToHost(device *model.Device, imagePath string, extra
 	}
 
 	// 5. Render layout (photo + overlay + calendar)
-	needsOverlay := device.ShowDate || device.ShowWeather || device.ShowCalendar
+	needsOverlay := device.ShowDate || device.ShowPhotoDate || device.ShowWeather || device.ShowCalendar
 	var finalImg image.Image
 
 	if needsOverlay {
@@ -357,8 +359,9 @@ func (s *DeviceService) PushToHost(device *model.Device, imagePath string, extra
 			NativeWidth:  nativeW,
 			NativeHeight: nativeH,
 			Photo:        srcImg,
-			ShowDate:     device.ShowDate,
-			ShowWeather:  device.ShowWeather,
+			ShowDate:      device.ShowDate,
+			ShowPhotoDate: device.ShowPhotoDate,
+			ShowWeather:   device.ShowWeather,
 			Weather:      weatherData,
 			ShowCalendar: device.ShowCalendar,
 			Events:       events,

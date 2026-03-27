@@ -123,6 +123,13 @@ func (s *ImmichService) ImportPhotos() error {
 			Status:        "pending",
 		}
 
+		// Populate PhotoTakenAt from EXIF or asset metadata
+		photoDate := parseImmichDate(asset.ExifInfo.DateTimeOriginal)
+		if photoDate == nil {
+			photoDate = parseImmichDate(asset.LocalDateTime)
+		}
+		img.PhotoTakenAt = photoDate
+
 		if err := s.db.Create(&img).Error; err != nil {
 			log.Printf("Failed to insert immich asset %s: %v", asset.ID, err)
 			continue
@@ -149,6 +156,26 @@ func (s *ImmichService) ClearAndResync() error {
 		return err
 	}
 	return s.ImportPhotos()
+}
+
+// parseImmichDate parses ISO 8601 date strings from the Immich API.
+func parseImmichDate(s string) *time.Time {
+	if s == "" {
+		return nil
+	}
+	formats := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02T15:04:05.000Z",
+		"2006-01-02T15:04:05Z",
+		"2006-01-02T15:04:05",
+	}
+	for _, format := range formats {
+		if t, err := time.Parse(format, s); err == nil {
+			return &t
+		}
+	}
+	return nil
 }
 
 // GetPhotoCount returns the number of Immich photos in the database

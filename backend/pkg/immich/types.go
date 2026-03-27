@@ -9,8 +9,9 @@ type Album struct {
 
 // ExifInfo holds EXIF metadata for an asset
 type ExifInfo struct {
-	ExifImageWidth  int `json:"exifImageWidth"`
-	ExifImageHeight int `json:"exifImageHeight"`
+	ExifImageWidth   int    `json:"exifImageWidth"`
+	ExifImageHeight  int    `json:"exifImageHeight"`
+	DateTimeOriginal string `json:"dateTimeOriginal"`
 }
 
 // Asset represents an Immich media asset
@@ -18,6 +19,7 @@ type Asset struct {
 	ID               string   `json:"id"`
 	Type             string   `json:"type"` // "IMAGE", "VIDEO"
 	OriginalFileName string   `json:"originalFileName"`
+	LocalDateTime    string   `json:"localDateTime"`
 	ExifInfo         ExifInfo `json:"exifInfo"`
 }
 

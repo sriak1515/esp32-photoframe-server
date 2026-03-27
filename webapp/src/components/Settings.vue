@@ -1130,6 +1130,7 @@
                               {{
                                 [
                                   editingDevice.show_date ? 'Date' : '',
+                                  editingDevice.show_photo_date ? 'Photo Date' : '',
                                   editingDevice.show_weather ? 'Weather' : '',
                                 ]
                                   .filter(Boolean)
@@ -1139,10 +1140,17 @@
                           </div>
                         </v-expansion-panel-title>
                         <v-expansion-panel-text>
-                          <div class="d-flex ga-4 mt-2">
+                          <div class="d-flex ga-4 mt-2 flex-wrap">
                             <v-checkbox
                               v-model="editingDevice.show_date"
                               label="Show Date"
+                              color="primary"
+                              density="compact"
+                              hide-details
+                            ></v-checkbox>
+                            <v-checkbox
+                              v-model="editingDevice.show_photo_date"
+                              label="Show Photo Date"
                               color="primary"
                               density="compact"
                               hide-details
@@ -1155,6 +1163,15 @@
                               hide-details
                             ></v-checkbox>
                           </div>
+                          <v-alert
+                            v-if="editingDevice.show_photo_date"
+                            type="info"
+                            variant="tonal"
+                            density="compact"
+                            class="mt-2"
+                          >
+                            If photos were synced before this feature was added, resync your image source to populate photo creation dates.
+                          </v-alert>
                           <div v-if="editingDevice.show_date" class="mt-3">
                             <v-select
                               v-model="editingDevice.date_format"
@@ -1814,6 +1831,7 @@ const openAddDeviceDialog = () => {
     use_device_parameter: false,
     enable_collage: false,
     show_date: true,
+    show_photo_date: false,
     show_weather: true,
     weather_lat: null,
     weather_lon: null,
@@ -1863,6 +1881,7 @@ const saveDevice = async () => {
         use_device_parameter: editingDevice.use_device_parameter!,
         enable_collage: editingDevice.enable_collage!,
         show_date: editingDevice.show_date!,
+        show_photo_date: editingDevice.show_photo_date || false,
         show_weather: editingDevice.show_weather!,
         weather_lat: editingDevice.weather_lat || 0,
         weather_lon: editingDevice.weather_lon || 0,
@@ -1885,6 +1904,7 @@ const saveDevice = async () => {
         editingDevice.use_device_parameter!,
         editingDevice.enable_collage!,
         editingDevice.show_date!,
+        editingDevice.show_photo_date || false,
         editingDevice.show_weather!,
         editingDevice.weather_lat || 0,
         editingDevice.weather_lon || 0,
@@ -1923,6 +1943,7 @@ const refreshDeviceParams = async (device: Device) => {
       true, // Ensure enabled
       device.enable_collage,
       device.show_date!,
+      device.show_photo_date || false,
       device.show_weather!,
       device.weather_lat || 0,
       device.weather_lon || 0,

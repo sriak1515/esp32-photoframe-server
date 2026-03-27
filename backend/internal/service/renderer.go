@@ -45,8 +45,10 @@ type RenderOptions struct {
 	NativeWidth  int    // Physical panel width (for DPI calc)
 	NativeHeight int    // Physical panel height (for DPI calc)
 	Photo        image.Image
-	ShowDate     bool
-	ShowWeather  bool
+	ShowDate      bool
+	ShowPhotoDate bool
+	PhotoDate     *time.Time // Original photo creation date
+	ShowWeather   bool
 	Weather      *weather.CurrentWeather
 	ShowCalendar bool
 	Events       []gcalendar.Event
@@ -236,19 +238,34 @@ func (s *RendererService) Render(opts RenderOptions) (image.Image, error) {
 		}
 	}
 
+	// Compute photo date string if enabled and available
+	var photoDateStr string
+	showPhotoDate := opts.ShowPhotoDate && opts.PhotoDate != nil
+	if showPhotoDate {
+		pd := *opts.PhotoDate
+		if opts.Timezone != "" {
+			if loc, err := time.LoadLocation(opts.Timezone); err == nil {
+				pd = pd.In(loc)
+			}
+		}
+		photoDateStr = pd.Format("Jan 02, 2006")
+	}
+
 	data := templateData{
-		Layout:       opts.Layout,
-		DisplayMode:  displayMode,
-		Width:        opts.Width,
-		Height:       opts.Height,
-		PhotoBase64:  photoBase64,
-		FontBase64:   s.fontBase64,
-		DPMM:         dpmm,
-		BaseUnit:     baseUnit,
-		ShowDate:     opts.ShowDate,
-		DateStr:      now.Format(dateFormat(opts.DateFormat)),
-		DateStrLong:  now.Format("Monday, January 02, 2006"),
-		TimeStr:      now.Format("15:04"),
+		Layout:        opts.Layout,
+		DisplayMode:   displayMode,
+		Width:         opts.Width,
+		Height:        opts.Height,
+		PhotoBase64:   photoBase64,
+		FontBase64:    s.fontBase64,
+		DPMM:          dpmm,
+		BaseUnit:      baseUnit,
+		ShowDate:      opts.ShowDate,
+		DateStr:       now.Format(dateFormat(opts.DateFormat)),
+		DateStrLong:   now.Format("Monday, January 02, 2006"),
+		TimeStr:       now.Format("15:04"),
+		ShowPhotoDate: showPhotoDate,
+		PhotoDateStr:  photoDateStr,
 		ShowWeather:  opts.ShowWeather,
 		Weather:      opts.Weather,
 		ShowCalendar: opts.ShowCalendar,
@@ -320,11 +337,13 @@ type templateData struct {
 	FontBase64   string
 	DPMM         float64 // dots per mm (kept for compatibility)
 	BaseUnit     float64 // min(width,height)/100, for viewport-relative sizing
-	ShowDate     bool
-	DateStr      string // short: "Mon, Jan 02"
-	DateStrLong  string // long: "Monday, January 02, 2006"
-	TimeStr      string
-	ShowWeather  bool
+	ShowDate      bool
+	DateStr       string // short: "Mon, Jan 02"
+	DateStrLong   string // long: "Monday, January 02, 2006"
+	TimeStr       string
+	ShowPhotoDate bool
+	PhotoDateStr  string // photo creation date, short format
+	ShowWeather   bool
 	Weather      *weather.CurrentWeather
 	ShowCalendar bool
 	Events       []gcalendar.Event
@@ -504,6 +523,17 @@ const layoutTemplate = `<!DOCTYPE html>
     white-space: nowrap;
     direction: ltr;
     font-variation-settings: 'FILL' 1;
+  }
+
+  .photo-date {
+    font-size: var(--secondary-size);
+    opacity: 0.75;
+    display: flex;
+    align-items: center;
+    gap: 0.3em;
+  }
+  .photo-date .material-symbols-outlined {
+    font-size: 1.1em;
   }
 
   .photo-area {
@@ -780,6 +810,7 @@ const layoutTemplate = `<!DOCTYPE html>
       {{if .ShowDate}}
       <div>
         <div class="date">{{.DateStr}}</div>
+        {{if .ShowPhotoDate}}<div class="photo-date"><span class="material-symbols-outlined">photo_camera</span> {{.PhotoDateStr}}</div>{{end}}
       </div>
       {{end}}
       {{if and .ShowWeather .Weather}}
@@ -814,12 +845,13 @@ const layoutTemplate = `<!DOCTYPE html>
     {{if eq .DisplayMode "contain"}}<img class="photo-blur" src="data:image/jpeg;base64,{{.PhotoBase64}}">{{end}}
     <img class="photo" src="data:image/jpeg;base64,{{.PhotoBase64}}">
   </div>
-  {{if or .ShowDate .ShowWeather .ShowCalendar}}
+  {{if or .ShowDate .ShowPhotoDate .ShowWeather .ShowCalendar}}
   <div class="overlay">
     <div class="overlay-left">
       {{if .ShowDate}}
       <div class="date">{{.DateStr}}</div>
       {{end}}
+      {{if .ShowPhotoDate}}<div class="photo-date"><span class="material-symbols-outlined">photo_camera</span> {{.PhotoDateStr}}</div>{{end}}
       {{if and .ShowCalendar .NextEvent}}
       <div class="event-inline">
         {{formatEventTime .NextEvent}} &mdash; {{.NextEvent.Summary}}
@@ -853,10 +885,11 @@ const layoutTemplate = `<!DOCTYPE html>
     <img class="photo" src="data:image/jpeg;base64,{{.PhotoBase64}}">
   </div>
   <div class="info-panel">
-    {{if or .ShowDate (and .ShowWeather .Weather)}}
+    {{if or .ShowDate .ShowPhotoDate (and .ShowWeather .Weather)}}
     <div class="info-header">
       {{if .ShowDate}}
       <div class="date">{{.DateStr}}</div>
+      {{if .ShowPhotoDate}}<div class="photo-date"><span class="material-symbols-outlined">photo_camera</span> {{.PhotoDateStr}}</div>{{end}}
       {{end}}
       {{if and .ShowWeather .Weather}}
       <div class="weather-block">
@@ -891,12 +924,13 @@ const layoutTemplate = `<!DOCTYPE html>
     {{if eq .DisplayMode "contain"}}<img class="photo-blur" src="data:image/jpeg;base64,{{.PhotoBase64}}">{{end}}
     <img class="photo" src="data:image/jpeg;base64,{{.PhotoBase64}}">
   </div>
-  {{if or .ShowDate .ShowWeather .ShowCalendar}}
+  {{if or .ShowDate .ShowPhotoDate .ShowWeather .ShowCalendar}}
   <div class="overlay">
     <div class="overlay-left">
       {{if .ShowDate}}
       <div class="date">{{.DateStr}}</div>
       {{end}}
+      {{if .ShowPhotoDate}}<div class="photo-date"><span class="material-symbols-outlined">photo_camera</span> {{.PhotoDateStr}}</div>{{end}}
       {{if and .ShowCalendar .NextEvent}}
       <div class="event-inline">
         {{formatEventTime .NextEvent}} &mdash; {{.NextEvent.Summary}}
