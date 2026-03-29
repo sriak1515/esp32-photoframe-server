@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.6.0
+
+### Added
+- Overlay: display photo creation date from Immich EXIF metadata and Synology timestamps
+- Overlay: new per-device "Show Photo Date" toggle in device settings
+
+### Fixed
+- Docker: pin Alpine to 3.20 to fix canvas native module build failure with GCC 15
+- Docker: fix Go toolchain version mismatch in builder stage
+- Immich: fix photo orientation for portrait photos with EXIF rotation (orientations 5-8)
+- Increase HTTP client timeout to 120s for slow e-ink display updates
+- Restore authentication to image serving endpoint
+- Add IPv6 link-local fallback to mDNS transport
+
 ## v1.5.6
 
 ### Added
