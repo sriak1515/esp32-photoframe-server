@@ -61,32 +61,37 @@ func (s *DeviceService) ListDevices() ([]model.Device, error) {
 }
 
 func (s *DeviceService) AddDevice(host string, useDeviceParameter, enableCollage, showDate, showPhotoDate, showWeather bool, weatherLat, weatherLon float64, layout string, displayMode string, showCalendar bool, calendarID string, dateFormat string) (*model.Device, error) {
+	// Try to fetch device info (works on LAN, fails for remote devices)
+	var name string
+	var width, height int
+	var orientation string
+
 	sysInfo, err := s.pfClient.FetchSystemInfo(host)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch system info: %w", err)
+		log.Printf("Could not reach device at %s (may be remote): %v", host, err)
+		// Use defaults for unreachable devices; dimensions will be updated on first image request
+		name = host
+		width = 800
+		height = 480
+		orientation = "landscape"
+	} else {
+		name = sysInfo.DeviceName
+		width = sysInfo.Width
+		height = sysInfo.Height
+
+		config, cfgErr := s.pfClient.FetchDeviceConfig(host)
+		if cfgErr == nil {
+			orientation = config.DisplayOrientation
+		}
 	}
 
-	name := sysInfo.DeviceName
-	width := sysInfo.Width
-	height := sysInfo.Height
-
-	// Fetch orientation
-	config, err := s.pfClient.FetchDeviceConfig(host)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch device config: %w", err)
-	}
-	orientation := config.DisplayOrientation
-
-	// Fallback for name if still empty
 	if name == "" {
 		name = host
 	}
-
-	// Validate dimensions
 	if width == 0 || height == 0 {
-		return nil, errors.New("device dimensions are required")
+		width = 800
+		height = 480
 	}
-
 	if orientation == "" {
 		orientation = "landscape"
 	}
@@ -352,21 +357,21 @@ func (s *DeviceService) PushToHost(device *model.Device, imagePath string, extra
 
 		var renderErr error
 		finalImg, renderErr = s.renderer.Render(RenderOptions{
-			Layout:       layout,
-			DisplayMode:  displayMode,
-			Width:        logicalW,
-			Height:       logicalH,
-			NativeWidth:  nativeW,
-			NativeHeight: nativeH,
-			Photo:        srcImg,
+			Layout:        layout,
+			DisplayMode:   displayMode,
+			Width:         logicalW,
+			Height:        logicalH,
+			NativeWidth:   nativeW,
+			NativeHeight:  nativeH,
+			Photo:         srcImg,
 			ShowDate:      device.ShowDate,
 			ShowPhotoDate: device.ShowPhotoDate,
 			ShowWeather:   device.ShowWeather,
-			Weather:      weatherData,
-			ShowCalendar: device.ShowCalendar,
-			Events:       events,
-			Timezone:     deviceTimezone,
-			DateFormat:   device.DateFormat,
+			Weather:       weatherData,
+			ShowCalendar:  device.ShowCalendar,
+			Events:        events,
+			Timezone:      deviceTimezone,
+			DateFormat:    device.DateFormat,
 		})
 		if renderErr != nil {
 			return fmt.Errorf("render failed: %w", renderErr)

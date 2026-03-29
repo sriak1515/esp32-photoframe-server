@@ -28,6 +28,9 @@ func JWTMiddleware(authService *service.AuthService) echo.MiddlewareFunc {
 			// Set user context
 			c.Set("user_id", claims.UserID)
 			c.Set("username", claims.Username)
+			if claims.DeviceID > 0 {
+				c.Set("device_id", claims.DeviceID)
+			}
 
 			return next(c)
 		}

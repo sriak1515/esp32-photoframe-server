@@ -134,7 +134,7 @@ func (h *DeviceHandler) ConfigureDeviceSource(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "device not found"})
 	}
 
-	token, err := h.authService.GetOrGenerateDeviceToken(userID, username, device.Name)
+	token, err := h.authService.GetOrGenerateDeviceToken(userID, username, device.Name, &device.ID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to generate token: " + err.Error()})
 	}
@@ -318,6 +318,12 @@ func (h *DeviceHandler) PushToDevice(c echo.Context) error {
 
 	// Push
 	if err := h.deviceService.PushToDevice(uint(deviceID), imagePath); err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "not reachable") || strings.Contains(errMsg, "failed to resolve") {
+			return c.JSON(http.StatusServiceUnavailable, map[string]string{
+				"error": "Device is not reachable. Please ensure the device is online and accessible.",
+			})
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("push failed: %v", err)})
 	}
 

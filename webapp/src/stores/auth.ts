@@ -42,11 +42,23 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function generateToken(name: string) {
+  async function generateToken(name: string, deviceId?: number) {
     try {
-      const res = await api.post('auth/tokens', { name });
+      const res = await api.post('auth/tokens', {
+        name,
+        device_id: deviceId || undefined,
+      });
       await fetchTokens();
       return res.data.token;
+    } catch (e: any) {
+      throw e;
+    }
+  }
+
+  async function updateTokenDevice(id: number, deviceId: number | null) {
+    try {
+      await api.put(`auth/tokens/${id}`, { device_id: deviceId });
+      await fetchTokens();
     } catch (e: any) {
       throw e;
     }
@@ -73,6 +85,7 @@ export const useAuthStore = defineStore('auth', () => {
     checkStatus,
     fetchTokens,
     generateToken,
+    updateTokenDevice,
     revokeToken,
   };
 });

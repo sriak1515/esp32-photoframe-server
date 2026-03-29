@@ -33,7 +33,7 @@ type Image struct {
 	SynologyPhotoID int            `json:"synology_id"`
 	ThumbnailKey    string         `json:"thumbnail_key"`   // Cache key for Synology
 	ImmichAssetID   string         `json:"immich_asset_id"` // UUID for Immich assets
-	PhotoTakenAt    *time.Time     `json:"photo_taken_at"` // Original photo creation/taken date
+	PhotoTakenAt    *time.Time     `json:"photo_taken_at"`  // Original photo creation/taken date
 	CreatedAt       time.Time      `json:"created_at"`
 	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
 }

@@ -81,22 +81,32 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 	source := c.Param("source")
 
 	// 1. Identify Device and Determine Settings
-	// Try to find device by Hostname (X-Hostname header) first, then IP
+	// Three-tier identification: token DeviceID → X-Hostname → client IP
 	var device model.Device
-	var result *gorm.DB
+	deviceFound := false
 
-	hostname := c.Request().Header.Get("X-Hostname")
-	if hostname != "" {
-		// Try matching Host or Name? Host in DB is often hostname.
-		result = h.db.Where("host = ?", hostname).First(&device)
+	// Tier 1: Token-based identification (works over internet)
+	if devID, ok := c.Get("device_id").(uint); ok && devID > 0 {
+		if err := h.db.First(&device, devID).Error; err == nil {
+			deviceFound = true
+		}
 	}
 
-	// If not found by hostname, try by IP
-	deviceFound := result != nil && result.Error == nil
+	// Tier 2: X-Hostname header (backward compat, LAN setups)
+	if !deviceFound {
+		if hostname := c.Request().Header.Get("X-Hostname"); hostname != "" {
+			if err := h.db.Where("host = ?", hostname).First(&device).Error; err == nil {
+				deviceFound = true
+			}
+		}
+	}
+
+	// Tier 3: Client IP (backward compat, LAN setups)
 	if !deviceFound {
 		clientIP := c.RealIP()
-		result = h.db.Where("host = ?", clientIP).First(&device)
-		deviceFound = result.Error == nil
+		if err := h.db.Where("host = ?", clientIP).First(&device).Error; err == nil {
+			deviceFound = true
+		}
 	}
 
 	// Native resolution of the device panel
@@ -332,11 +342,11 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 			ShowPhotoDate: showPhotoDate,
 			PhotoDate:     photoTakenAt,
 			ShowWeather:   showWeather,
-			Weather:      weatherData,
-			ShowCalendar: showCalendar,
-			Events:       events,
-			Timezone:     deviceTimezone,
-			DateFormat:   device.DateFormat,
+			Weather:       weatherData,
+			ShowCalendar:  showCalendar,
+			Events:        events,
+			Timezone:      deviceTimezone,
+			DateFormat:    device.DateFormat,
 		})
 		if renderErr != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "render failed: " + renderErr.Error()})

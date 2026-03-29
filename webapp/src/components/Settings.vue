@@ -958,6 +958,21 @@
                       hide-details
                       class="flex-grow-1"
                     ></v-text-field>
+                    <v-select
+                      v-model="newTokenDeviceId"
+                      :items="[
+                        { title: 'None', value: null },
+                        ...availableDevices.map((d: any) => ({
+                          title: d.name,
+                          value: d.id,
+                        })),
+                      ]"
+                      label="Bind to Device"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                      style="max-width: 220px"
+                    ></v-select>
                     <v-btn color="primary" @click="generateToken"
                       >Generate</v-btn
                     >
@@ -970,6 +985,7 @@
                 <thead>
                   <tr>
                     <th>Name</th>
+                    <th>Bound Device</th>
                     <th>Created At</th>
                     <th class="text-right">Action</th>
                   </tr>
@@ -977,6 +993,25 @@
                 <tbody>
                   <tr v-for="token in authStore.tokens" :key="token.id">
                     <td>{{ token.name }}</td>
+                    <td>
+                      <v-select
+                        :model-value="token.device_id"
+                        :items="[
+                          { title: 'None', value: null },
+                          ...availableDevices.map((d: any) => ({
+                            title: d.name,
+                            value: d.id,
+                          })),
+                        ]"
+                        variant="plain"
+                        density="compact"
+                        hide-details
+                        style="max-width: 180px; font-size: inherit"
+                        @update:model-value="
+                          (val: any) => updateTokenDevice(token.id, val)
+                        "
+                      ></v-select>
+                    </td>
                     <td>{{ new Date(token.created_at).toLocaleString() }}</td>
                     <td class="text-right">
                       <v-btn
@@ -990,7 +1025,7 @@
                     </td>
                   </tr>
                   <tr v-if="authStore.tokens.length === 0">
-                    <td colspan="3" class="text-center text-grey py-4">
+                    <td colspan="4" class="text-center text-grey py-4">
                       No active tokens found. Create one above to connect a
                       device.
                     </td>
@@ -1186,7 +1221,9 @@
                               {{
                                 [
                                   editingDevice.show_date ? 'Date' : '',
-                                  editingDevice.show_photo_date ? 'Photo Date' : '',
+                                  editingDevice.show_photo_date
+                                    ? 'Photo Date'
+                                    : '',
                                   editingDevice.show_weather ? 'Weather' : '',
                                 ]
                                   .filter(Boolean)
@@ -1226,7 +1263,9 @@
                             density="compact"
                             class="mt-2"
                           >
-                            If photos were synced before this feature was added, resync your image source to populate photo creation dates.
+                            If photos were synced before this feature was added,
+                            resync your image source to populate photo creation
+                            dates.
                           </v-alert>
                           <div v-if="editingDevice.show_date" class="mt-3">
                             <v-select
@@ -2517,6 +2556,7 @@ const clearImmich = async () => {
 // Token Management
 const generatedToken = ref('');
 const newTokenName = ref('');
+const newTokenDeviceId = ref<number | null>(null);
 
 const copyToken = async () => {
   try {
@@ -2546,13 +2586,29 @@ const generateToken = async () => {
     return;
   }
   try {
-    const token = await authStore.generateToken(newTokenName.value);
+    const token = await authStore.generateToken(
+      newTokenName.value,
+      newTokenDeviceId.value ?? undefined
+    );
     generatedToken.value = token;
     newTokenName.value = '';
+    newTokenDeviceId.value = null;
     showMessage('Token generated!');
   } catch (e: any) {
     showMessage(
       'Failed to generate token: ' + (e.response?.data?.error || e.message),
+      true
+    );
+  }
+};
+
+const updateTokenDevice = async (tokenId: number, deviceId: number | null) => {
+  try {
+    await authStore.updateTokenDevice(tokenId, deviceId);
+    showMessage('Token device binding updated');
+  } catch (e: any) {
+    showMessage(
+      'Failed to update token: ' + (e.response?.data?.error || e.message),
       true
     );
   }

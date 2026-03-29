@@ -8,6 +8,7 @@ import (
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/db"
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/handler"
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/middleware"
+	"github.com/aitjcize/esp32-photoframe-server/backend/internal/model"
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/service"
 	"github.com/aitjcize/esp32-photoframe-server/backend/pkg/gcalendar"
 	"github.com/aitjcize/esp32-photoframe-server/backend/pkg/googlephotos"
@@ -15,6 +16,7 @@ import (
 	"github.com/aitjcize/esp32-photoframe-server/backend/pkg/weather"
 	"github.com/labstack/echo/v4"
 	echoMiddleware "github.com/labstack/echo/v4/middleware"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -122,6 +124,9 @@ func main() {
 	if err := db.Migrate(database, dbPath); err != nil {
 		log.Fatal("Failed to run database migrations:", err)
 	}
+
+	// Backfill existing API keys with device IDs (matches token Name to Device Name)
+	backfillDeviceTokens(database)
 
 	// Initialize Services
 	settingsService := service.NewSettingsService(database)
@@ -289,6 +294,7 @@ func main() {
 	// Device Tokens (Protected)
 	protectedApi.POST("/auth/tokens", ah.GenerateDeviceToken)
 	protectedApi.GET("/auth/tokens", ah.ListTokens)
+	protectedApi.PUT("/auth/tokens/:id", ah.UpdateTokenDevice)
 	protectedApi.DELETE("/auth/tokens/:id", ah.RevokeToken)
 	protectedApi.GET("/auth/sessions", ah.ListSessions)
 	protectedApi.DELETE("/auth/sessions/:id", ah.RevokeSession)
@@ -376,6 +382,25 @@ func cleanupTempThumbnails(dataDir string) {
 			log.Printf("Failed to remove temp thumbnail %s: %v", f, err)
 		} else {
 			log.Printf("Cleaned up temp thumbnail: %s", f)
+		}
+	}
+}
+
+// backfillDeviceTokens associates existing API keys with devices by matching
+// the token name to device names. This is idempotent and handles the migration
+// from tokens without device_id to tokens with device_id.
+// Ambiguous matches (multiple devices with the same name) are skipped.
+func backfillDeviceTokens(database *gorm.DB) {
+	var keys []model.APIKey
+	database.Where("device_id IS NULL").Find(&keys)
+	for _, key := range keys {
+		var devices []model.Device
+		database.Where("name = ?", key.Name).Find(&devices)
+		if len(devices) == 1 {
+			database.Model(&key).Update("device_id", devices[0].ID)
+			log.Printf("Backfilled API key %d (%s) with device ID %d", key.ID, key.Name, devices[0].ID)
+		} else if len(devices) > 1 {
+			log.Printf("Skipping backfill for API key %d (%s): %d devices with the same name", key.ID, key.Name, len(devices))
 		}
 	}
 }

@@ -1,0 +1,1 @@
+ALTER TABLE api_keys ADD COLUMN device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL;

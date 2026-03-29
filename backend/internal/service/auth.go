@@ -19,6 +19,7 @@ type JWTClaims struct {
 	UserID   uint   `json:"user_id"`
 	Username string `json:"username"`
 	KeyID    uint   `json:"key_id,omitempty"`
+	DeviceID uint   `json:"device_id,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -111,20 +112,27 @@ func (s *AuthService) generateToken(user *model.User, userAgent, ip string) (str
 	return tokenString, nil
 }
 
-func (s *AuthService) GenerateDeviceToken(userID uint, username string, name string) (string, error) {
+func (s *AuthService) GenerateDeviceToken(userID uint, username string, name string, deviceID *uint) (string, error) {
 	// Create API Key record
 	apiKey := model.APIKey{
-		UserID: userID,
-		Name:   name,
+		UserID:   userID,
+		DeviceID: deviceID,
+		Name:     name,
 	}
 	if err := s.db.Create(&apiKey).Error; err != nil {
 		return "", err
+	}
+
+	var devID uint
+	if deviceID != nil {
+		devID = *deviceID
 	}
 
 	claims := JWTClaims{
 		UserID:   userID,
 		Username: username,
 		KeyID:    apiKey.ID,
+		DeviceID: devID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(87600 * time.Hour)), // 10 years
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -136,14 +144,14 @@ func (s *AuthService) GenerateDeviceToken(userID uint, username string, name str
 	return token.SignedString(s.jwtSecret)
 }
 
-func (s *AuthService) GetOrGenerateDeviceToken(userID uint, username string, name string) (string, error) {
+func (s *AuthService) GetOrGenerateDeviceToken(userID uint, username string, name string, deviceID *uint) (string, error) {
 	// Check for existing key with this name and revoke it to ensure 1:1 mapping and freshness
 	var apiKey model.APIKey
 	if err := s.db.Where("user_id = ? AND name = ?", userID, name).First(&apiKey).Error; err == nil {
 		// Key exists. Delete it so we can create a fresh one
 		s.db.Delete(&apiKey)
 	}
-	return s.GenerateDeviceToken(userID, username, name)
+	return s.GenerateDeviceToken(userID, username, name, deviceID)
 }
 
 func (s *AuthService) ValidateToken(tokenString string) (*JWTClaims, error) {
@@ -159,10 +167,13 @@ func (s *AuthService) ValidateToken(tokenString string) (*JWTClaims, error) {
 		// If subject is device, check APIKey table
 		if claims.Subject == "device" {
 			if claims.KeyID > 0 {
-				var count int64
-				s.db.Model(&model.APIKey{}).Where("id = ?", claims.KeyID).Count(&count)
-				if count == 0 {
+				var apiKey model.APIKey
+				if err := s.db.First(&apiKey, claims.KeyID).Error; err != nil {
 					return nil, errors.New("token revoked")
+				}
+				// Enrich from DB for legacy tokens (no DeviceID in JWT)
+				if claims.DeviceID == 0 && apiKey.DeviceID != nil {
+					claims.DeviceID = *apiKey.DeviceID
 				}
 			}
 			return claims, nil
@@ -186,6 +197,10 @@ func (s *AuthService) ListTokens(userID uint) ([]model.APIKey, error) {
 	var tokens []model.APIKey
 	err := s.db.Where("user_id = ?", userID).Find(&tokens).Error
 	return tokens, err
+}
+
+func (s *AuthService) UpdateTokenDevice(userID uint, tokenID uint, deviceID *uint) error {
+	return s.db.Model(&model.APIKey{}).Where("user_id = ? AND id = ?", userID, tokenID).Update("device_id", deviceID).Error
 }
 
 func (s *AuthService) RevokeToken(userID uint, tokenID uint) error {

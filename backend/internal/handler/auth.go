@@ -87,7 +87,8 @@ func (h *AuthHandler) GenerateDeviceToken(c echo.Context) error {
 	}
 
 	var req struct {
-		Name string `json:"name"`
+		Name     string `json:"name"`
+		DeviceID *uint  `json:"device_id"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -96,12 +97,33 @@ func (h *AuthHandler) GenerateDeviceToken(c echo.Context) error {
 		req.Name = "Device Token"
 	}
 
-	token, err := h.authService.GenerateDeviceToken(userID, username, req.Name)
+	token, err := h.authService.GenerateDeviceToken(userID, username, req.Name, req.DeviceID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to generate token"})
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{"token": token})
+}
+
+func (h *AuthHandler) UpdateTokenDevice(c echo.Context) error {
+	userID, ok := c.Get("user_id").(uint)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user id not found in context"})
+	}
+
+	var req struct {
+		ID       uint  `param:"id"`
+		DeviceID *uint `json:"device_id"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	if err := h.authService.UpdateTokenDevice(userID, req.ID, req.DeviceID); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update token"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "token updated"})
 }
 
 func (h *AuthHandler) ListTokens(c echo.Context) error {

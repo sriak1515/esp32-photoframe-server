@@ -38,22 +38,22 @@ var displayProfiles = map[string]DisplayProfile{
 
 // RenderOptions contains all data needed to render a layout.
 type RenderOptions struct {
-	Layout       string // "photo_info", "photo_overlay", "side_panel"
-	DisplayMode  string // "cover" or "contain"
-	Width        int    // Logical pixel width
-	Height       int    // Logical pixel height
-	NativeWidth  int    // Physical panel width (for DPI calc)
-	NativeHeight int    // Physical panel height (for DPI calc)
-	Photo        image.Image
+	Layout        string // "photo_info", "photo_overlay", "side_panel"
+	DisplayMode   string // "cover" or "contain"
+	Width         int    // Logical pixel width
+	Height        int    // Logical pixel height
+	NativeWidth   int    // Physical panel width (for DPI calc)
+	NativeHeight  int    // Physical panel height (for DPI calc)
+	Photo         image.Image
 	ShowDate      bool
 	ShowPhotoDate bool
 	PhotoDate     *time.Time // Original photo creation date
 	ShowWeather   bool
-	Weather      *weather.CurrentWeather
-	ShowCalendar bool
-	Events       []gcalendar.Event
-	Timezone     string // IANA timezone e.g. "Asia/Taipei" for date formatting
-	DateFormat   string // Go time format string, empty = default "Mon, Jan 02"
+	Weather       *weather.CurrentWeather
+	ShowCalendar  bool
+	Events        []gcalendar.Event
+	Timezone      string // IANA timezone e.g. "Asia/Taipei" for date formatting
+	DateFormat    string // Go time format string, empty = default "Mon, Jan 02"
 }
 
 const browserIdleTimeout = 1 * time.Minute
@@ -266,14 +266,14 @@ func (s *RendererService) Render(opts RenderOptions) (image.Image, error) {
 		TimeStr:       now.Format("15:04"),
 		ShowPhotoDate: showPhotoDate,
 		PhotoDateStr:  photoDateStr,
-		ShowWeather:  opts.ShowWeather,
-		Weather:      opts.Weather,
-		ShowCalendar: opts.ShowCalendar,
-		Events:       filterEventsForLayout(opts.Layout, opts.Events, maxEvents),
-		NextEvent:    nextEvent,
-		IsPortrait:   opts.Height > opts.Width,
-		IsSmall:      (opts.Width * opts.Height) < 500000,
-		PhotoRatio:   photoRatio,
+		ShowWeather:   opts.ShowWeather,
+		Weather:       opts.Weather,
+		ShowCalendar:  opts.ShowCalendar,
+		Events:        filterEventsForLayout(opts.Layout, opts.Events, maxEvents),
+		NextEvent:     nextEvent,
+		IsPortrait:    opts.Height > opts.Width,
+		IsSmall:       (opts.Width * opts.Height) < 500000,
+		PhotoRatio:    photoRatio,
 	}
 
 	var htmlBuf bytes.Buffer
@@ -329,14 +329,14 @@ func (s *RendererService) Render(opts RenderOptions) (image.Image, error) {
 }
 
 type templateData struct {
-	Layout       string
-	DisplayMode  string // "cover" or "contain"
-	Width        int
-	Height       int
-	PhotoBase64  string
-	FontBase64   string
-	DPMM         float64 // dots per mm (kept for compatibility)
-	BaseUnit     float64 // min(width,height)/100, for viewport-relative sizing
+	Layout        string
+	DisplayMode   string // "cover" or "contain"
+	Width         int
+	Height        int
+	PhotoBase64   string
+	FontBase64    string
+	DPMM          float64 // dots per mm (kept for compatibility)
+	BaseUnit      float64 // min(width,height)/100, for viewport-relative sizing
 	ShowDate      bool
 	DateStr       string // short: "Mon, Jan 02"
 	DateStrLong   string // long: "Monday, January 02, 2006"
@@ -344,13 +344,13 @@ type templateData struct {
 	ShowPhotoDate bool
 	PhotoDateStr  string // photo creation date, short format
 	ShowWeather   bool
-	Weather      *weather.CurrentWeather
-	ShowCalendar bool
-	Events       []gcalendar.Event
-	NextEvent    *gcalendar.Event
-	IsPortrait   bool
-	IsSmall      bool
-	PhotoRatio   float64 // fraction of screen for photo (0.0-1.0)
+	Weather       *weather.CurrentWeather
+	ShowCalendar  bool
+	Events        []gcalendar.Event
+	NextEvent     *gcalendar.Event
+	IsPortrait    bool
+	IsSmall       bool
+	PhotoRatio    float64 // fraction of screen for photo (0.0-1.0)
 }
 
 func imageToBase64(img image.Image) (string, error) {
