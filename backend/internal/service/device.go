@@ -251,7 +251,7 @@ func (s *DeviceService) PushToHost(device *model.Device, imagePath string, extra
 		log.Printf("Failed to fetch system info for %s: %v", device.Name, sysInfoErr)
 	}
 
-	// Use PNG for older firmware that doesn't support epd.gz
+	// Use PNG for older firmware that doesn't support epdgz
 	if sysInfoErr != nil || !photoframe.SupportsEPDGZ(sysInfo.Version) {
 		processingOpts["format"] = "png"
 	}

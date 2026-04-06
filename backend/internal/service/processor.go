@@ -93,20 +93,20 @@ func (s *ProcessorService) ProcessImage(img image.Image, options map[string]stri
 	f.Close()
 
 	// 3. Prepare output paths
-	format := "epd.gz"
+	format := "epdgz"
 	if f, ok := options["format"]; ok {
 		format = f
 		delete(options, "format")
 	}
 	outputExt := format
-	if format == "epd.gz" {
-		outputExt = "epd.gz"
+	if format == "epdgz" {
+		outputExt = "epdgz"
 	}
 	outputPath := filepath.Join(tmpDir, "output."+outputExt)
 	thumbPath := filepath.Join(tmpDir, "thumbnail.jpg")
 
 	// 4. Prepare CLI arguments for epaper-image-convert
-	// epaper-image-convert input.jpg output.{epd.gz,png} -d WxH -f {format} -t thumbnail.jpg [options]
+	// epaper-image-convert input.jpg output.{epdgz,png} -d WxH -f {format} -t thumbnail.jpg [options]
 	args := []string{inputPath, outputPath, "-f", format}
 
 	// Add dimension if specified

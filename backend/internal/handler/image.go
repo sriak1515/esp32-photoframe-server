@@ -362,7 +362,7 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 		"dimension": fmt.Sprintf("%dx%d", nativeW, nativeH),
 	}
 
-	// Determine output format based on firmware version (epd.gz requires >= 2.6.1)
+	// Determine output format based on firmware version (epdgz requires >= 2.6.1)
 	firmwareVersion := c.Request().Header.Get("X-Firmware-Version")
 	if firmwareVersion == "" || !photoframe.SupportsEPDGZ(firmwareVersion) {
 		procOptions["format"] = "png"

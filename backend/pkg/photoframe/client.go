@@ -13,10 +13,10 @@ import (
 	"time"
 )
 
-// MinEPDGZVersion is the minimum firmware version that supports epd.gz format.
+// MinEPDGZVersion is the minimum firmware version that supports epdgz format.
 const MinEPDGZVersion = "2.6.1"
 
-// SupportsEPDGZ returns true if the given firmware version supports the epd.gz format.
+// SupportsEPDGZ returns true if the given firmware version supports the epdgz format.
 func SupportsEPDGZ(version string) bool {
 	return compareVersions(version, MinEPDGZVersion) > 0
 }
@@ -91,7 +91,7 @@ func NewClient() *Client {
 	}
 }
 
-// PushImage pushes an EPD.GZ image and an optional thumbnail to the device.
+// PushImage pushes an EPDGZ image and an optional thumbnail to the device.
 func (c *Client) PushImage(host string, imageBytes []byte, thumbBytes []byte) error {
 	// Resolve Host to IP manually to bypass HTTP client resolver issues with mDNS
 	ip, err := c.resolveHost(host)
@@ -109,7 +109,7 @@ func (c *Client) PushImage(host string, imageBytes []byte, thumbBytes []byte) er
 	writer := multipart.NewWriter(body)
 
 	// 1. Add image part
-	part, err := writer.CreateFormFile("image", "image.epd.gz")
+	part, err := writer.CreateFormFile("image", "image.epdgz")
 	if err != nil {
 		return fmt.Errorf("failed to create form file: %w", err)
 	}
