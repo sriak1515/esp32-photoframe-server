@@ -209,11 +209,7 @@ func (s *ImmichService) clearAndResyncInternal() error {
 	if err := s.ClearPhotos(); err != nil {
 		return err
 	}
-	if err := s.ImportPhotos(); err != nil {
-		return err
-	}
-
-	return nil
+	return s.ImportPhotos()
 }
 
 // isRotatedOrientation returns true if the EXIF orientation indicates a 90° or 270°

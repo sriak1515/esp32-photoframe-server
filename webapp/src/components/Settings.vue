@@ -414,33 +414,33 @@
                       </v-col>
                     </v-row>
 
-                      <v-row class="mt-1">
-                        <v-col cols="12" md="6">
-                          <v-checkbox
-                            v-model="form.synology_auto_sync_enabled"
-                            label="Auto Sync Album"
-                            color="primary"
-                            density="compact"
-                            hide-details
-                            @update:model-value="saveSettingsInternal()"
-                          ></v-checkbox>
-                        </v-col>
-                        <v-col cols="12" md="6">
-                          <v-select
-                            v-model="form.synology_auto_sync_interval_minutes"
-                            :items="autoSyncIntervalOptions"
-                            item-title="title"
-                            item-value="value"
-                            label="Auto Sync Interval"
-                            variant="outlined"
-                            density="compact"
-                            :disabled="!form.synology_auto_sync_enabled"
-                            hint="How often to refresh photos from the selected album"
-                            persistent-hint
-                            @update:model-value="saveSettingsInternal()"
-                          ></v-select>
-                        </v-col>
-                      </v-row>
+                    <v-row class="mt-1">
+                      <v-col cols="12" md="6">
+                        <v-checkbox
+                          v-model="form.synology_auto_sync_enabled"
+                          label="Auto Sync Album"
+                          color="primary"
+                          density="compact"
+                          hide-details
+                          @update:model-value="saveSettingsInternal()"
+                        ></v-checkbox>
+                      </v-col>
+                      <v-col cols="12" md="6">
+                        <v-select
+                          v-model="form.synology_auto_sync_interval_minutes"
+                          :items="autoSyncIntervalOptions"
+                          item-title="title"
+                          item-value="value"
+                          label="Auto Sync Interval"
+                          variant="outlined"
+                          density="compact"
+                          :disabled="!form.synology_auto_sync_enabled"
+                          hint="How often to refresh photos from the selected album"
+                          persistent-hint
+                          @update:model-value="saveSettingsInternal()"
+                        ></v-select>
+                      </v-col>
+                    </v-row>
 
                     <div class="d-flex flex-wrap ga-2 mt-4">
                       <v-btn
