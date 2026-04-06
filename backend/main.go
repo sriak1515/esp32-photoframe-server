@@ -165,8 +165,10 @@ func main() {
 	}
 	// Initialize Synology Photos Service
 	synologyService := service.NewSynologyService(database, settingsService)
+	synologyService.StartAutoSync()
 	// Initialize Immich Service
 	immichService := service.NewImmichService(database, settingsService)
+	immichService.StartAutoSync()
 	// Initialize AI Generation Service
 	aiGenerationService := service.NewAIGenerationService(settingsService)
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,10 +22,54 @@ type ImmichService struct {
 	settings *SettingsService
 	client   *immich.Client
 	mu       sync.Mutex
+	autoSync *AutoSyncScheduler
 }
 
 func NewImmichService(db *gorm.DB, settings *SettingsService) *ImmichService {
-	return &ImmichService{db: db, settings: settings}
+	svc := &ImmichService{db: db, settings: settings}
+	svc.autoSync = NewAutoSyncScheduler(AutoSyncSchedulerOptions{
+		Name:     "Immich",
+		Settings: settings,
+		IsRelevantKey: func(key string) bool {
+			switch key {
+			case "immich_auto_sync_enabled", "immich_auto_sync_interval_minutes", "immich_album_id", "immich_url", "immich_api_key":
+				return true
+			default:
+				return false
+			}
+		},
+		IsConfigured: svc.isAutoSyncConfigured,
+		GetConfig:    svc.getAutoSyncConfig,
+		RunSync:      svc.clearAndResyncInternal,
+	})
+	return svc
+}
+
+// StartAutoSync starts a background loop that periodically syncs Immich photos
+// when the corresponding settings are enabled.
+func (s *ImmichService) StartAutoSync() {
+	s.autoSync.Start()
+}
+
+func (s *ImmichService) isAutoSyncConfigured() bool {
+	baseURL, _ := s.settings.Get("immich_url")
+	apiKey, _ := s.settings.Get("immich_api_key")
+	albumID, _ := s.settings.Get("immich_album_id")
+	return baseURL != "" && apiKey != "" && albumID != ""
+}
+
+func (s *ImmichService) getAutoSyncConfig() (bool, time.Duration) {
+	enabledStr, _ := s.settings.Get("immich_auto_sync_enabled")
+	enabled := strings.EqualFold(enabledStr, "true")
+
+	minutes := 60
+	if intervalStr, err := s.settings.Get("immich_auto_sync_interval_minutes"); err == nil {
+		if parsed, parseErr := strconv.Atoi(intervalStr); parseErr == nil && parsed > 0 {
+			minutes = parsed
+		}
+	}
+
+	return enabled, time.Duration(minutes) * time.Minute
 }
 
 // getClient returns the current client, initializing from stored settings if needed.
@@ -157,10 +202,18 @@ func (s *ImmichService) ClearPhotos() error {
 
 // ClearAndResync deletes all Immich photos and re-imports from the configured album
 func (s *ImmichService) ClearAndResync() error {
+	return s.autoSync.SyncNow()
+}
+
+func (s *ImmichService) clearAndResyncInternal() error {
 	if err := s.ClearPhotos(); err != nil {
 		return err
 	}
-	return s.ImportPhotos()
+	if err := s.ImportPhotos(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // isRotatedOrientation returns true if the EXIF orientation indicates a 90° or 270°

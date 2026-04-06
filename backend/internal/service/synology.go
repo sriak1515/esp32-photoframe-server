@@ -21,13 +21,57 @@ type SynologyService struct {
 	settings *SettingsService
 	client   *synology.Client
 	mu       sync.Mutex
+	autoSync *AutoSyncScheduler
 }
 
 func NewSynologyService(db *gorm.DB, settings *SettingsService) *SynologyService {
-	return &SynologyService{
+	svc := &SynologyService{
 		db:       db,
 		settings: settings,
 	}
+	svc.autoSync = NewAutoSyncScheduler(AutoSyncSchedulerOptions{
+		Name:     "Synology",
+		Settings: settings,
+		IsRelevantKey: func(key string) bool {
+			switch key {
+			case "synology_auto_sync_enabled", "synology_auto_sync_interval_minutes", "synology_album_id", "synology_url", "synology_account", "synology_password":
+				return true
+			default:
+				return false
+			}
+		},
+		IsConfigured: svc.isAutoSyncConfigured,
+		GetConfig:    svc.getAutoSyncConfig,
+		RunSync:      svc.clearAndResyncInternal,
+	})
+	return svc
+}
+
+// StartAutoSync starts background synchronization for Synology photos.
+func (s *SynologyService) StartAutoSync() {
+	s.autoSync.Start()
+}
+
+func (s *SynologyService) isAutoSyncConfigured() bool {
+	baseURL, _ := s.settings.Get("synology_url")
+	account, _ := s.settings.Get("synology_account")
+	password, _ := s.settings.Get("synology_password")
+	albumID, _ := s.settings.Get("synology_album_id")
+	return baseURL != "" && account != "" && password != "" && albumID != ""
+}
+
+func (s *SynologyService) getAutoSyncConfig() (bool, time.Duration) {
+	enabledStr, _ := s.settings.Get("synology_auto_sync_enabled")
+	enabled := strings.EqualFold(enabledStr, "true")
+
+	minutes := 60
+	if intervalStr, err := s.settings.Get("synology_auto_sync_interval_minutes"); err == nil {
+		if parsed, parseErr := strconv.Atoi(intervalStr); parseErr == nil && parsed > 0 {
+			minutes = parsed
+		}
+	}
+
+	return enabled, time.Duration(minutes) * time.Minute
 }
 
 // ensureClient initializes and logs in the client if needed
@@ -304,6 +348,10 @@ func (s *SynologyService) ClearPhotos() error {
 
 // ClearAndResync deletes all Synology photos and re-imports them
 func (s *SynologyService) ClearAndResync() error {
+	return s.autoSync.SyncNow()
+}
+
+func (s *SynologyService) clearAndResyncInternal() error {
 	if err := s.ClearPhotos(); err != nil {
 		return err
 	}

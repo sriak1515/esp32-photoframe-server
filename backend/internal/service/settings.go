@@ -1,6 +1,8 @@
 package service
 
 import (
+	"sync"
+
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/model"
 	"github.com/aitjcize/esp32-photoframe-server/backend/pkg/googlephotos"
 	"gorm.io/gorm"
@@ -21,7 +23,9 @@ func (p *CalendarConfigProvider) GetGoogleConfig() (googlephotos.Config, error) 
 }
 
 type SettingsService struct {
-	db *gorm.DB
+	db        *gorm.DB
+	mu        sync.Mutex
+	callbacks []func(key, value string)
 }
 
 func NewSettingsService(db *gorm.DB) *SettingsService {
@@ -40,7 +44,27 @@ func (s *SettingsService) Get(key string) (string, error) {
 func (s *SettingsService) Set(key string, value string) error {
 	setting := model.Setting{Key: key, Value: value}
 	// Save will create or update
-	return s.db.Save(&setting).Error
+	if err := s.db.Save(&setting).Error; err != nil {
+		return err
+	}
+	s.notifyChanged(key, value)
+	return nil
+}
+
+func (s *SettingsService) RegisterOnChange(callback func(key, value string)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.callbacks = append(s.callbacks, callback)
+}
+
+func (s *SettingsService) notifyChanged(key, value string) {
+	s.mu.Lock()
+	callbacks := append([]func(key, value string){}, s.callbacks...)
+	s.mu.Unlock()
+
+	for _, callback := range callbacks {
+		callback(key, value)
+	}
 }
 
 func (s *SettingsService) GetAll() (map[string]string, error) {

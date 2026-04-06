@@ -414,6 +414,34 @@
                       </v-col>
                     </v-row>
 
+                      <v-row class="mt-1">
+                        <v-col cols="12" md="6">
+                          <v-checkbox
+                            v-model="form.synology_auto_sync_enabled"
+                            label="Auto Sync Album"
+                            color="primary"
+                            density="compact"
+                            hide-details
+                            @update:model-value="saveSettingsInternal()"
+                          ></v-checkbox>
+                        </v-col>
+                        <v-col cols="12" md="6">
+                          <v-select
+                            v-model="form.synology_auto_sync_interval_minutes"
+                            :items="autoSyncIntervalOptions"
+                            item-title="title"
+                            item-value="value"
+                            label="Auto Sync Interval"
+                            variant="outlined"
+                            density="compact"
+                            :disabled="!form.synology_auto_sync_enabled"
+                            hint="How often to refresh photos from the selected album"
+                            persistent-hint
+                            @update:model-value="saveSettingsInternal()"
+                          ></v-select>
+                        </v-col>
+                      </v-row>
+
                     <div class="d-flex flex-wrap ga-2 mt-4">
                       <v-btn
                         color="primary"
@@ -547,6 +575,34 @@
                           @click="loadImmichAlbums"
                           >Refresh Albums</v-btn
                         >
+                      </v-col>
+                    </v-row>
+
+                    <v-row class="mt-1">
+                      <v-col cols="12" md="6">
+                        <v-checkbox
+                          v-model="form.immich_auto_sync_enabled"
+                          label="Auto Sync Album"
+                          color="primary"
+                          density="compact"
+                          hide-details
+                          @update:model-value="saveSettingsInternal()"
+                        ></v-checkbox>
+                      </v-col>
+                      <v-col cols="12" md="6">
+                        <v-select
+                          v-model="form.immich_auto_sync_interval_minutes"
+                          :items="autoSyncIntervalOptions"
+                          item-title="title"
+                          item-value="value"
+                          label="Auto Sync Interval"
+                          variant="outlined"
+                          density="compact"
+                          :disabled="!form.immich_auto_sync_enabled"
+                          hint="How often to refresh photos from the selected album"
+                          persistent-hint
+                          @update:model-value="saveSettingsInternal()"
+                        ></v-select>
                       </v-col>
                     </v-row>
 
@@ -2031,10 +2087,14 @@ const form = reactive({
   synology_skip_cert: false,
   synology_otp_code: '',
   synology_album_id: '',
+  synology_auto_sync_enabled: false,
+  synology_auto_sync_interval_minutes: 60,
   albums: [] as any[],
   immich_url: '',
   immich_api_key: '',
   immich_album_id: '',
+  immich_auto_sync_enabled: false,
+  immich_auto_sync_interval_minutes: 60,
   immich_albums: [] as any[],
   telegram_bot_token: '',
   telegram_push_enabled: false,
@@ -2051,6 +2111,16 @@ const synologyAlbumOptions = computed(() => {
 const immichAlbumOptions = computed(() => {
   return form.immich_albums.map((a: any) => ({ id: a.id, name: a.albumName }));
 });
+
+const autoSyncIntervalOptions = [
+  { title: 'Every 15 minutes', value: 15 },
+  { title: 'Every 30 minutes', value: 30 },
+  { title: 'Every 1 hour', value: 60 },
+  { title: 'Every 3 hours', value: 180 },
+  { title: 'Every 6 hours', value: 360 },
+  { title: 'Every 12 hours', value: 720 },
+  { title: 'Every 24 hours', value: 1440 },
+];
 
 // Helper to show snackbar
 const showMessage = (msg: string, isError = false) => {
@@ -2091,10 +2161,20 @@ onMounted(async () => {
     synology_album_id: store.settings.synology_album_id
       ? parseInt(store.settings.synology_album_id)
       : '',
+    synology_auto_sync_enabled:
+      store.settings.synology_auto_sync_enabled === 'true',
+    synology_auto_sync_interval_minutes: parseInt(
+      store.settings.synology_auto_sync_interval_minutes || '60'
+    ),
     synology_sid: store.settings.synology_sid || '',
     immich_url: store.settings.immich_url || '',
     immich_api_key: store.settings.immich_api_key || '',
     immich_album_id: store.settings.immich_album_id || '',
+    immich_auto_sync_enabled:
+      store.settings.immich_auto_sync_enabled === 'true',
+    immich_auto_sync_interval_minutes: parseInt(
+      store.settings.immich_auto_sync_interval_minutes || '60'
+    ),
     openai_api_key: store.settings.openai_api_key || '',
     google_api_key: store.settings.google_api_key || '',
   });
@@ -2177,9 +2257,17 @@ const saveSettingsInternal = async () => {
     synology_password: form.synology_password,
     synology_skip_cert: String(form.synology_skip_cert),
     synology_album_id: String(form.synology_album_id),
+    synology_auto_sync_enabled: String(form.synology_auto_sync_enabled),
+    synology_auto_sync_interval_minutes: String(
+      form.synology_auto_sync_interval_minutes
+    ),
     immich_url: form.immich_url,
     immich_api_key: form.immich_api_key,
     immich_album_id: form.immich_album_id,
+    immich_auto_sync_enabled: String(form.immich_auto_sync_enabled),
+    immich_auto_sync_interval_minutes: String(
+      form.immich_auto_sync_interval_minutes
+    ),
     openai_api_key: form.openai_api_key,
     google_api_key: form.google_api_key,
   });
