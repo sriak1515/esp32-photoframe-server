@@ -168,7 +168,14 @@ func (s *SynologyService) GetPhoto(id int, cacheKeyStr, size string) ([]byte, er
 	var img model.Image
 	if err := s.db.Where("synology_photo_id = ? AND source = ?", id, model.SourceSynologyPhotos).First(&img).Error; err != nil {
 		// Fallback if not found in DB
-		return s.client.GetPhoto(id, cacheKeyStr, size, 0, s.client.SynoToken)
+		data, getErr := s.client.GetPhoto(id, cacheKeyStr, size, 0, s.client.SynoToken)
+		if s.isAuthExpired(getErr) {
+			if reErr := s.relogin(); reErr != nil {
+				return nil, reErr
+			}
+			return s.client.GetPhoto(id, cacheKeyStr, size, 0, s.client.SynoToken)
+		}
+		return data, getErr
 	}
 
 	// 2. Get albumID from settings for the request
@@ -181,7 +188,29 @@ func (s *SynologyService) GetPhoto(id int, cacheKeyStr, size string) ([]byte, er
 		}
 	}
 
-	return s.client.GetPhoto(id, img.ThumbnailKey, size, albumID, s.client.SynoToken)
+	data, err := s.client.GetPhoto(id, img.ThumbnailKey, size, albumID, s.client.SynoToken)
+	if s.isAuthExpired(err) {
+		if reErr := s.relogin(); reErr != nil {
+			return nil, reErr
+		}
+		return s.client.GetPhoto(id, img.ThumbnailKey, size, albumID, s.client.SynoToken)
+	}
+	return data, err
+}
+
+// relogin clears the expired session and attempts to re-authenticate.
+// The saved DID (device token) allows bypassing 2FA on trusted devices.
+func (s *SynologyService) relogin() error {
+	s.mu.Lock()
+	s.client.SID = ""
+	s.mu.Unlock()
+	s.settings.Set("synology_sid", "")
+	log.Printf("Synology session expired, attempting re-login with saved device token")
+	return s.ensureClient("")
+}
+
+func (s *SynologyService) isAuthExpired(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "code: 119")
 }
 
 func (s *SynologyService) ListAlbums() ([]synology.Album, error) {
@@ -190,15 +219,13 @@ func (s *SynologyService) ListAlbums() ([]synology.Album, error) {
 	}
 
 	albums, err := s.client.ListAlbums(0, 100)
-	if err != nil {
-		// Check if it's an auth error
-		if strings.Contains(err.Error(), "code: 119") {
-			s.mu.Lock()
-			s.client.SID = ""
-			s.mu.Unlock()
-			s.settings.Set("synology_sid", "")
-			return nil, errors.New("authentication expired: please reconnect")
+	if s.isAuthExpired(err) {
+		if reErr := s.relogin(); reErr != nil {
+			return nil, errors.New("authentication expired and re-login failed: " + reErr.Error())
 		}
+		albums, err = s.client.ListAlbums(0, 100)
+	}
+	if err != nil {
 		return nil, err
 	}
 
@@ -235,17 +262,14 @@ func (s *SynologyService) ImportPhotos() error {
 	// Fetch all photos (up to 1000 total for now)
 	for offset < 1000 {
 		photos, err := s.client.ListPhotos(offset, limit, albumID)
+		if s.isAuthExpired(err) {
+			if reErr := s.relogin(); reErr != nil {
+				return errors.New("authentication expired and re-login failed: " + reErr.Error())
+			}
+			photos, err = s.client.ListPhotos(offset, limit, albumID)
+		}
 		if err != nil {
 			log.Printf("Synology ListPhotos error: %v", err)
-			// Check if it's an auth error (code 119 = session expired)
-			if strings.Contains(err.Error(), "code: 119") {
-				// Clear the SID
-				s.mu.Lock()
-				s.client.SID = ""
-				s.mu.Unlock()
-				s.settings.Set("synology_sid", "")
-				return errors.New("authentication expired: please reconnect")
-			}
 			return err
 		}
 

@@ -76,6 +76,9 @@ func (c *Client) Login(otpCode string) error {
 	params.Set("format", "cookie")
 	params.Set("enable_device_token", "yes")
 	params.Set("device_name", "PhotoFrame")
+	params.Set("enable_syno_token", "yes")
+	params.Set("logintype", "local")
+	params.Set("rememberme", "1")
 
 	if otpCode != "" {
 		params.Set("otp_code", otpCode)
