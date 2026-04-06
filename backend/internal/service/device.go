@@ -239,32 +239,37 @@ func (s *DeviceService) GetDeviceConfig(deviceID uint) (*photoframe.DeviceConfig
 // This encapsulates the logic previously in Telegram bot
 // Now includes fetching device parameters if configured
 func (s *DeviceService) PushToHost(device *model.Device, imagePath string, extraOpts map[string]string) error {
-	// 0. Fetch Device Parameters if enabled
+	// 0. Fetch system info to determine firmware version and optionally device parameters
 	processingOpts := make(map[string]string)
 	for k, v := range extraOpts {
 		processingOpts[k] = v
 	}
 
+	// Always fetch system info for firmware version check
+	sysInfo, sysInfoErr := s.pfClient.FetchSystemInfo(device.Host)
+	if sysInfoErr != nil {
+		log.Printf("Failed to fetch system info for %s: %v", device.Name, sysInfoErr)
+	}
+
+	// Use PNG for older firmware that doesn't support epd.gz
+	if sysInfoErr != nil || !photoframe.SupportsEPDGZ(sysInfo.Version) {
+		processingOpts["format"] = "png"
+	}
+
 	if device.UseDeviceParameter {
-		// 1. Fetch Dimensions
-		sysInfo, err := s.pfClient.FetchSystemInfo(device.Host)
-		if err == nil {
+		// 1. Fetch Dimensions (reuse already-fetched system info)
+		if sysInfoErr == nil {
 			device.Width = sysInfo.Width
 			device.Height = sysInfo.Height
-		} else {
-			log.Printf("Failed to fetch dimensions for %s: %v", device.Name, err)
 		}
 
-		var procSettings *photoframe.ProcessingSettings
-		var palette *photoframe.Palette
-
 		// 2. Fetch Processing Settings and Palette
-		procSettings, err = s.pfClient.FetchProcessingSettings(device.Host)
+		procSettings, err := s.pfClient.FetchProcessingSettings(device.Host)
 		if err != nil {
 			log.Printf("Failed to fetch processing settings from %s: %v", device.Host, err)
 		}
 
-		palette, err = s.pfClient.FetchPalette(device.Host)
+		palette, err := s.pfClient.FetchPalette(device.Host)
 		if err != nil {
 			log.Printf("Failed to fetch palette from %s: %v", device.Host, err)
 		}

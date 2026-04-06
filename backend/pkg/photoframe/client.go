@@ -8,9 +8,57 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
+
+// MinEPDGZVersion is the minimum firmware version that supports epd.gz format.
+const MinEPDGZVersion = "2.6.1"
+
+// SupportsEPDGZ returns true if the given firmware version supports the epd.gz format.
+func SupportsEPDGZ(version string) bool {
+	return compareVersions(version, MinEPDGZVersion) > 0
+}
+
+// compareVersions compares two semver strings (with optional "v" prefix).
+// Returns -1 if v1 < v2, 0 if equal, 1 if v1 > v2.
+// Dev versions (e.g. "dev-abc123") are considered older than any release.
+func compareVersions(v1, v2 string) int {
+	v1 = strings.TrimPrefix(v1, "v")
+	v2 = strings.TrimPrefix(v2, "v")
+
+	if strings.HasPrefix(v1, "dev-") {
+		return -1
+	}
+	if strings.HasPrefix(v2, "dev-") {
+		return 1
+	}
+
+	p1 := parseVersion(v1)
+	p2 := parseVersion(v2)
+
+	for i := 0; i < 3; i++ {
+		if p1[i] < p2[i] {
+			return -1
+		}
+		if p1[i] > p2[i] {
+			return 1
+		}
+	}
+	return 0
+}
+
+func parseVersion(v string) [3]int {
+	var parts [3]int
+	segs := strings.SplitN(v, ".", 3)
+	for i, s := range segs {
+		if i < 3 {
+			parts[i], _ = strconv.Atoi(s)
+		}
+	}
+	return parts
+}
 
 type Client struct {
 	httpClient *http.Client
@@ -43,8 +91,8 @@ func NewClient() *Client {
 	}
 }
 
-// PushImage pushes a PNG image and an optional thumbnail to the device.
-func (c *Client) PushImage(host string, pngBytes []byte, thumbBytes []byte) error {
+// PushImage pushes an EPD.GZ image and an optional thumbnail to the device.
+func (c *Client) PushImage(host string, imageBytes []byte, thumbBytes []byte) error {
 	// Resolve Host to IP manually to bypass HTTP client resolver issues with mDNS
 	ip, err := c.resolveHost(host)
 	if err != nil {
@@ -60,13 +108,13 @@ func (c *Client) PushImage(host string, pngBytes []byte, thumbBytes []byte) erro
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
-	// 1. Add PNG part
-	part, err := writer.CreateFormFile("image", "image.png")
+	// 1. Add image part
+	part, err := writer.CreateFormFile("image", "image.epd.gz")
 	if err != nil {
 		return fmt.Errorf("failed to create form file: %w", err)
 	}
-	if _, err := io.Copy(part, bytes.NewReader(pngBytes)); err != nil {
-		return fmt.Errorf("failed to copy png bytes: %w", err)
+	if _, err := io.Copy(part, bytes.NewReader(imageBytes)); err != nil {
+		return fmt.Errorf("failed to copy image bytes: %w", err)
 	}
 
 	// 2. Add Thumbnail part (if available)
@@ -153,6 +201,7 @@ type SystemInfo struct {
 	Width      int    `json:"width"`
 	Height     int    `json:"height"`
 	BoardName  string `json:"board_name"`
+	Version    string `json:"version"`
 }
 
 func (c *Client) FetchSystemInfo(host string) (*SystemInfo, error) {

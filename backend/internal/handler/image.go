@@ -362,6 +362,12 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 		"dimension": fmt.Sprintf("%dx%d", nativeW, nativeH),
 	}
 
+	// Determine output format based on firmware version (epd.gz requires >= 2.6.1)
+	firmwareVersion := c.Request().Header.Get("X-Firmware-Version")
+	if firmwareVersion == "" || !photoframe.SupportsEPDGZ(firmwareVersion) {
+		procOptions["format"] = "png"
+	}
+
 	// 3.5. Parse X-Processing-Settings header if present
 	var settings *photoframe.ProcessingSettings
 	if settingsStr := c.Request().Header.Get("X-Processing-Settings"); settingsStr != "" {
@@ -410,7 +416,11 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 	// Set Content-Length header
 	c.Response().Header().Set("Content-Length", fmt.Sprintf("%d", len(processedBytes)))
 
-	return c.Blob(http.StatusOK, "image/png", processedBytes)
+	contentType := "application/octet-stream"
+	if firmwareVersion == "" || !photoframe.SupportsEPDGZ(firmwareVersion) {
+		contentType = "image/png"
+	}
+	return c.Blob(http.StatusOK, contentType, processedBytes)
 }
 
 func (h *ImageHandler) GetServedImageThumbnail(c echo.Context) error {
