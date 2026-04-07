@@ -7,19 +7,19 @@ import (
 )
 
 type AutoSyncScheduler struct {
-	name           string
-	settings       *SettingsService
-	isRelevantKey  func(key string) bool
-	isConfigured   func() bool
-	getConfig      func() (bool, time.Duration)
-	runSync        func() error
-	retryInterval  time.Duration
-	resetCh        chan struct{}
-	startOnce      sync.Once
-	runMu          sync.Mutex
-	stateMu        sync.Mutex
-	lastSuccessAt  time.Time
-	retryAfter     time.Time
+	name          string
+	settings      *SettingsService
+	isRelevantKey func(key string) bool
+	isConfigured  func() bool
+	getConfig     func() (bool, time.Duration)
+	runSync       func() error
+	retryInterval time.Duration
+	resetCh       chan struct{}
+	startOnce     sync.Once
+	runMu         sync.Mutex
+	stateMu       sync.Mutex
+	lastSuccessAt time.Time
+	retryAfter    time.Time
 }
 
 func NewAutoSyncScheduler(opts AutoSyncSchedulerOptions) *AutoSyncScheduler {
