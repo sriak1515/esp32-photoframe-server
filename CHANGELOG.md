@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.6.1
+
+### Added
+- EPDGZ format: serve compressed 4-bit-per-pixel images by default, saving bandwidth and enabling instant display rendering on the device. Automatically falls back to PNG for firmware older than v2.6.2.
+- Internet operation: bind device tokens to specific device IDs for reliable identification over the internet without hostname/IP matching
+- Auto-sync scheduler for Immich and Synology photo sources with configurable intervals
+- Dev Container configuration for streamlined local development
+
+### Fixed
+- Synology: automatically re-login when session expires using saved device token (bypasses 2FA on trusted devices)
+- Synology auto-sync UI: fix indentation in settings panel
+- Device push: return 503 error when device is unreachable instead of misleading "queued" response
+- Token management: add missing PUT endpoint for updating device binding on tokens
+- Token backfill: skip ambiguous matches when multiple devices share the same name
+
 ## v1.6.0
 
 ### Added
