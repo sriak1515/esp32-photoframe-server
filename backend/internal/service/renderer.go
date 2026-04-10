@@ -39,7 +39,7 @@ var displayProfiles = map[string]DisplayProfile{
 // RenderOptions contains all data needed to render a layout.
 type RenderOptions struct {
 	Layout        string // "photo_info", "photo_overlay", "side_panel"
-	DisplayMode   string // "cover" or "contain"
+	DisplayMode   string // "cover" or "fit"
 	Width         int    // Logical pixel width
 	Height        int    // Logical pixel height
 	NativeWidth   int    // Physical panel width (for DPI calc)
@@ -330,7 +330,7 @@ func (s *RendererService) Render(opts RenderOptions) (image.Image, error) {
 
 type templateData struct {
 	Layout        string
-	DisplayMode   string // "cover" or "contain"
+	DisplayMode   string // "cover" or "fit"
 	Width         int
 	Height        int
 	PhotoBase64   string
@@ -802,7 +802,7 @@ const layoutTemplate = `<!DOCTYPE html>
 <!-- LAYOUT 1: Photo + Info Strip -->
 <div class="layout-photo_info {{if .IsPortrait}}portrait{{else}}landscape{{end}}">
   <div class="photo-area">
-    {{if eq .DisplayMode "contain"}}<img class="photo-blur" src="data:image/jpeg;base64,{{.PhotoBase64}}">{{end}}
+    {{if eq .DisplayMode "fit"}}<img class="photo-blur" src="data:image/jpeg;base64,{{.PhotoBase64}}">{{end}}
     <img class="photo" src="data:image/jpeg;base64,{{.PhotoBase64}}">
   </div>
   <div class="info-panel">
@@ -842,7 +842,7 @@ const layoutTemplate = `<!DOCTYPE html>
 <!-- LAYOUT 2: Full Photo + Bottom Overlay -->
 <div class="layout-photo_overlay">
   <div class="photo-area">
-    {{if eq .DisplayMode "contain"}}<img class="photo-blur" src="data:image/jpeg;base64,{{.PhotoBase64}}">{{end}}
+    {{if eq .DisplayMode "fit"}}<img class="photo-blur" src="data:image/jpeg;base64,{{.PhotoBase64}}">{{end}}
     <img class="photo" src="data:image/jpeg;base64,{{.PhotoBase64}}">
   </div>
   {{if or .ShowDate .ShowPhotoDate .ShowWeather .ShowCalendar}}
@@ -881,7 +881,7 @@ const layoutTemplate = `<!DOCTYPE html>
 <!-- LAYOUT 3: Side Panel -->
 <div class="layout-side_panel {{if .IsPortrait}}portrait{{else}}landscape{{end}}">
   <div class="photo-area">
-    {{if eq .DisplayMode "contain"}}<img class="photo-blur" src="data:image/jpeg;base64,{{.PhotoBase64}}">{{end}}
+    {{if eq .DisplayMode "fit"}}<img class="photo-blur" src="data:image/jpeg;base64,{{.PhotoBase64}}">{{end}}
     <img class="photo" src="data:image/jpeg;base64,{{.PhotoBase64}}">
   </div>
   <div class="info-panel">
@@ -921,7 +921,7 @@ const layoutTemplate = `<!DOCTYPE html>
 <!-- Default: same as photo_overlay -->
 <div class="layout-photo_overlay">
   <div class="photo-area">
-    {{if eq .DisplayMode "contain"}}<img class="photo-blur" src="data:image/jpeg;base64,{{.PhotoBase64}}">{{end}}
+    {{if eq .DisplayMode "fit"}}<img class="photo-blur" src="data:image/jpeg;base64,{{.PhotoBase64}}">{{end}}
     <img class="photo" src="data:image/jpeg;base64,{{.PhotoBase64}}">
   </div>
   {{if or .ShowDate .ShowPhotoDate .ShowWeather .ShowCalendar}}

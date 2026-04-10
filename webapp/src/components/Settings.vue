@@ -1198,8 +1198,8 @@
                                 value: 'cover',
                               },
                               {
-                                title: 'Contain (show entire photo)',
-                                value: 'contain',
+                                title: 'Fit (show entire photo)',
+                                value: 'fit',
                               },
                             ]"
                             label="Photo Display Mode"

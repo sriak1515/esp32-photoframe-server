@@ -70,7 +70,7 @@ type Device struct {
 	AIModel            string    `gorm:"column:ai_model" json:"ai_model"`
 	AIPrompt           string    `gorm:"column:ai_prompt" json:"ai_prompt"`
 	Layout             string    `json:"layout"`       // "photo_info", "photo_overlay", "side_panel"
-	DisplayMode        string    `json:"display_mode"` // "cover" or "contain"
+	DisplayMode        string    `json:"display_mode"` // "cover" or "fit"
 	ShowCalendar       bool      `json:"show_calendar"`
 	CalendarID         string    `json:"calendar_id"` // Google Calendar ID (per-device)
 	DateFormat         string    `json:"date_format"` // Go time format string, empty = default "Mon, Jan 02"
