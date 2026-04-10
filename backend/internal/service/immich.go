@@ -204,7 +204,6 @@ func (s *ImmichService) clearAndResyncInternal() error {
 	return s.ImportPhotos()
 }
 
-
 // parseImmichDate parses ISO 8601 date strings from the Immich API.
 func parseImmichDate(s string) *time.Time {
 	if s == "" {

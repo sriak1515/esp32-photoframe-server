@@ -301,17 +301,11 @@ func (s *DeviceService) PushToHost(device *model.Device, imagePath string, extra
 		return fmt.Errorf("failed to decode image: %w", err)
 	}
 
-	// 4. Orientation-aware Smart Resize
-	isTargetPortrait := logicalH > logicalW
-	if device.Orientation == "portrait" {
-		isTargetPortrait = true
-	} else if device.Orientation == "landscape" {
-		isTargetPortrait = false
-	}
-
-	if isTargetPortrait && logicalW > logicalH {
+	// 4. Apply device orientation to logical dimensions (for overlay rendering)
+	orientation := device.Orientation
+	if orientation == "portrait" && logicalW > logicalH {
 		logicalW, logicalH = logicalH, logicalW
-	} else if !isTargetPortrait && logicalH > logicalW {
+	} else if orientation == "landscape" && logicalW < logicalH {
 		logicalW, logicalH = logicalH, logicalW
 	}
 
@@ -386,10 +380,13 @@ func (s *DeviceService) PushToHost(device *model.Device, imagePath string, extra
 	}
 
 	// 6. Process for E-Paper
-	// Pass NATIVE dimensions to CLI.
-	// The CLI will detect Source (logicalW/H) vs Target (nativeW/H) orientation mismatch and rotate if needed.
+	// Always pass native panel dimensions. The CLI handles orientation
+	// internally (swaps dims, processes, rotates output to native layout).
 	opts := map[string]string{
 		"dimension": fmt.Sprintf("%dx%d", nativeW, nativeH),
+	}
+	if orientation != "" {
+		opts["orientation"] = orientation
 	}
 
 	// Merge extra options (device params)

@@ -154,24 +154,24 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 			}
 		}
 	}
+	// Determine effective orientation from header or device config
+	orientation := ""
 	if oStr := c.Request().Header.Get("X-Display-Orientation"); oStr != "" {
-		if oStr == "portrait" && logicalW > logicalH {
-			logicalW, logicalH = logicalH, logicalW
-		} else if oStr == "landscape" && logicalW < logicalH {
-			logicalW, logicalH = logicalH, logicalW
-		}
+		orientation = oStr
 		// Persist orientation update to database if it changed
 		if deviceFound && device.Orientation != oStr {
 			device.Orientation = oStr
 			h.db.Model(&device).Update("orientation", oStr)
 		}
-	} else if deviceFound && device.Orientation != "" {
-		// Use device orientation preference if no header provided
-		if device.Orientation == "portrait" && logicalW > logicalH {
-			logicalW, logicalH = logicalH, logicalW
-		} else if device.Orientation == "landscape" && logicalW < logicalH {
-			logicalW, logicalH = logicalH, logicalW
-		}
+	} else if deviceFound {
+		orientation = device.Orientation
+	}
+
+	// Swap logical dimensions to match orientation (used for overlays and collage)
+	if orientation == "portrait" && logicalW > logicalH {
+		logicalW, logicalH = logicalH, logicalW
+	} else if orientation == "landscape" && logicalW < logicalH {
+		logicalW, logicalH = logicalH, logicalW
 	}
 
 	layout := model.LayoutPhotoOverlay
@@ -356,10 +356,13 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 	}
 
 	// 3. Tone Mapping + Thumbnail (CLI)
-	// Pass NATIVE dimensions to CLI.
-	// The CLI will detect Source (logicalW/H) vs Target (nativeW/H) orientation mismatch and rotate if needed.
+	// Always pass native panel dimensions. The CLI handles orientation
+	// internally (swaps dims, processes, rotates output to native layout).
 	procOptions := map[string]string{
 		"dimension": fmt.Sprintf("%dx%d", nativeW, nativeH),
+	}
+	if orientation != "" {
+		procOptions["orientation"] = orientation
 	}
 
 	// Determine output format based on firmware version (epdgz requires >= 2.6.1)

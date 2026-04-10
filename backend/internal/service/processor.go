@@ -92,7 +92,11 @@ func (s *ProcessorService) ProcessImage(img image.Image, options map[string]stri
 	}
 	f.Close()
 
-	// 3. Prepare output paths
+	// 3. Orientation is passed through to CLI as --orientation flag.
+	// The CLI swaps dims, processes at oriented dimensions, then rotates
+	// output to native panel layout.
+
+	// Prepare output paths
 	format := "epdgz"
 	if f, ok := options["format"]; ok {
 		format = f
