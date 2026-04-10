@@ -150,17 +150,9 @@ func (s *ImmichService) ImportPhotos() error {
 			continue
 		}
 
-		// Determine orientation from EXIF dimensions, accounting for EXIF rotation.
-		// EXIF orientations 5,6,7,8 (or descriptive strings containing "90" or "270")
-		// swap width/height, meaning a landscape sensor capture is actually portrait.
+		// Determine display orientation from EXIF dimensions and rotation
 		w, h := asset.ExifInfo.ExifImageWidth, asset.ExifInfo.ExifImageHeight
-		if isRotatedOrientation(asset.ExifInfo.Orientation) {
-			w, h = h, w
-		}
-		orientation := "landscape"
-		if h > w && w > 0 {
-			orientation = "portrait"
-		}
+		orientation := determineOrientation(w, h, asset.ExifInfo.Orientation)
 
 		img := model.Image{
 			ImmichAssetID: asset.ID,
@@ -212,16 +204,6 @@ func (s *ImmichService) clearAndResyncInternal() error {
 	return s.ImportPhotos()
 }
 
-// isRotatedOrientation returns true if the EXIF orientation indicates a 90° or 270°
-// rotation, meaning width and height should be swapped to get the display dimensions.
-// Handles both numeric ("5"-"8") and descriptive ("Rotate 90 CW") formats from Immich.
-func isRotatedOrientation(orientation string) bool {
-	switch orientation {
-	case "5", "6", "7", "8":
-		return true
-	}
-	return strings.Contains(orientation, "90") || strings.Contains(orientation, "270")
-}
 
 // parseImmichDate parses ISO 8601 date strings from the Immich API.
 func parseImmichDate(s string) *time.Time {

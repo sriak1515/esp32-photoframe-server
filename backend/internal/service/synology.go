@@ -295,11 +295,7 @@ func (s *SynologyService) ImportPhotos() error {
 				}
 				if existing.Orientation == "" {
 					pw, ph := p.Additional.Resolution.Width, p.Additional.Resolution.Height
-					if ph > pw && pw > 0 {
-						existing.Orientation = "portrait"
-					} else {
-						existing.Orientation = "landscape"
-					}
+					existing.Orientation = determineOrientation(pw, ph, "")
 					existing.Width = pw
 					existing.Height = ph
 					updated = true
@@ -311,11 +307,8 @@ func (s *SynologyService) ImportPhotos() error {
 			}
 
 			// Determine orientation from resolution
-			orientation := "landscape"
 			pw, ph := p.Additional.Resolution.Width, p.Additional.Resolution.Height
-			if ph > pw && pw > 0 {
-				orientation = "portrait"
-			}
+			orientation := determineOrientation(pw, ph, "")
 
 			// Create
 			img := model.Image{
