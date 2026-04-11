@@ -64,6 +64,8 @@ func (s *DeviceService) AddDevice(host string, enableCollage, showDate, showPhot
 	var width, height int
 	var orientation string
 
+	var deviceConfig, deviceProc, devicePalette string
+
 	pfClient := photoframe.NewClient(host)
 	sysInfo, err := pfClient.FetchSystemInfo()
 	if err != nil {
@@ -80,12 +82,20 @@ func (s *DeviceService) AddDevice(host string, enableCollage, showDate, showPhot
 
 		configRaw, cfgErr := pfClient.FetchConfig()
 		if cfgErr == nil {
+			deviceConfig = configRaw
 			var parsed struct {
 				DisplayOrientation string `json:"display_orientation"`
 			}
 			if json.Unmarshal([]byte(configRaw), &parsed) == nil && parsed.DisplayOrientation != "" {
 				orientation = parsed.DisplayOrientation
 			}
+		}
+
+		if procRaw, err := pfClient.FetchProcessingSettings(); err == nil {
+			deviceProc = procRaw
+		}
+		if paletteRaw, err := pfClient.FetchPalette(); err == nil {
+			devicePalette = paletteRaw
 		}
 	}
 
@@ -118,9 +128,12 @@ func (s *DeviceService) AddDevice(host string, enableCollage, showDate, showPhot
 		WeatherLon:         weatherLon,
 		Layout:             layout,
 		DisplayMode:        displayMode,
-		ShowCalendar:       showCalendar,
-		CalendarID:         calendarID,
-		DateFormat:         dateFormat,
+		ShowCalendar:             showCalendar,
+		CalendarID:               calendarID,
+		DateFormat:               dateFormat,
+		DeviceConfig:             deviceConfig,
+		DeviceProcessingSettings: deviceProc,
+		DeviceColorPalette:       devicePalette,
 	}
 	if err := s.db.Create(device).Error; err != nil {
 		return nil, err
