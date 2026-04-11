@@ -1101,38 +1101,15 @@
                         variant="text"
                         size="small"
                         icon="mdi-pencil"
+                        title="Edit Device"
                         @click="editDevice(device)"
-                      ></v-btn>
-                      <v-btn
-                        v-if="device.use_device_parameter"
-                        color="info"
-                        variant="text"
-                        size="small"
-                        icon="mdi-refresh"
-                        title="Refresh Device Parameters"
-                        @click="refreshDeviceParams(device)"
-                      ></v-btn>
-                      <v-btn
-                        color="teal"
-                        variant="text"
-                        size="small"
-                        icon="mdi-cog-sync"
-                        title="Remote Device Config"
-                        @click="openDeviceConfigDialog(device)"
-                      ></v-btn>
-                      <v-btn
-                        color="secondary"
-                        variant="text"
-                        size="small"
-                        icon="mdi-link"
-                        title="Bind Image Source"
-                        @click="openBindSourceDialog(device)"
                       ></v-btn>
                       <v-btn
                         color="error"
                         variant="text"
                         size="small"
                         icon="mdi-delete"
+                        title="Delete Device"
                         @click="removeDevice(device.id)"
                       ></v-btn>
                     </td>
@@ -1145,409 +1122,90 @@
                 </tbody>
               </v-table>
 
-              <!-- Edit Device Dialog -->
-              <v-dialog v-model="showEditDeviceDialog" max-width="500px">
+              <!-- Edit Device Dialog (tabbed like device webapp) -->
+              <v-dialog v-model="showEditDeviceDialog" max-width="700px" scrollable>
                 <v-card>
-                  <v-card-title>{{
-                    isAddingDevice ? 'Add Device' : 'Edit Device'
-                  }}</v-card-title>
-                  <v-card-text>
-                    <v-expansion-panels
-                      v-model="deviceDialogPanels"
-                      multiple
-                      variant="accordion"
-                    >
-                      <!-- General -->
-                      <v-expansion-panel value="general">
-                        <v-expansion-panel-title>
-                          <div class="d-flex align-center ga-2">
-                            <v-icon size="small">mdi-cog</v-icon>
-                            <span class="text-subtitle-2">General</span>
-                          </div>
-                        </v-expansion-panel-title>
-                        <v-expansion-panel-text>
-                          <div class="d-flex ga-2 mt-2">
-                            <v-text-field
-                              v-model="editingDevice.name"
-                              label="Name"
-                              variant="outlined"
-                              density="compact"
-                              hide-details
-                            ></v-text-field>
-                          </div>
-                          <v-text-field
-                            v-model="editingDevice.host"
-                            label="Host / IP"
-                            variant="outlined"
-                            density="compact"
-                            class="mt-3"
-                            hide-details
-                          ></v-text-field>
-                          <v-checkbox
-                            v-model="editingDevice.use_device_parameter"
-                            label="Fetch parameters from device"
-                            color="primary"
-                            density="compact"
-                            hide-details
-                            class="mt-2"
-                          ></v-checkbox>
-                          <v-checkbox
-                            v-model="editingDevice.enable_collage"
-                            label="Enable Collage Mode"
-                            color="primary"
-                            density="compact"
-                            hide-details
-                          ></v-checkbox>
-                          <v-select
-                            v-model="editingDevice.display_mode"
-                            :items="[
-                              {
-                                title: 'Cover (fill, may crop)',
-                                value: 'cover',
-                              },
-                              {
-                                title: 'Fit (show entire photo)',
-                                value: 'fit',
-                              },
-                            ]"
-                            label="Photo Display Mode"
-                            variant="outlined"
-                            density="compact"
-                            class="mt-3"
-                            hide-details
-                          ></v-select>
-                        </v-expansion-panel-text>
-                      </v-expansion-panel>
+                  <v-card-title>{{ isAddingDevice ? 'Add Device' : editingDevice.name || 'Edit Device' }}</v-card-title>
+                  <v-tabs v-if="!isAddingDevice" v-model="deviceDialogTab" density="compact">
+                    <v-tab value="general">General</v-tab>
+                    <v-tab value="autoRotate">Auto Rotate</v-tab>
+                    <v-tab value="power">Power</v-tab>
+                  </v-tabs>
+                  <v-card-text style="min-height: 400px">
+                    <v-tabs-window v-model="deviceDialogTab">
+                      <!-- General Tab -->
+                      <v-tabs-window-item value="general">
+                        <v-text-field
+                          v-model="editingDevice.name"
+                          label="Device Name"
+                          variant="outlined"
+                          density="compact"
+                          hide-details
+                          class="mt-2 mb-3"
+                        ></v-text-field>
+                        <v-text-field
+                          v-model="editingDevice.host"
+                          label="Host / IP"
+                          variant="outlined"
+                          density="compact"
+                          hide-details
+                          class="mb-3"
+                        ></v-text-field>
+                        <v-select
+                          v-model="deviceConfig.display_orientation"
+                          :items="[{ title: 'Landscape', value: 'landscape' }, { title: 'Portrait', value: 'portrait' }]"
+                          label="Display Orientation"
+                          variant="outlined"
+                          density="compact"
+                          hide-details
+                          class="mb-3"
+                        ></v-select>
+                        <v-checkbox
+                          v-model="editingDevice.use_device_parameter"
+                          label="Fetch processing parameters from device"
+                          color="primary"
+                          density="compact"
+                          hide-details
+                        ></v-checkbox>
+                      </v-tabs-window-item>
 
-                      <!-- Overlay -->
-                      <v-expansion-panel value="overlay">
-                        <v-expansion-panel-title>
-                          <div class="d-flex align-center ga-2">
-                            <v-icon size="small">mdi-image-text</v-icon>
-                            <span class="text-subtitle-2">Overlay</span>
-                            <span class="text-caption text-grey ml-2">
-                              {{
-                                [
-                                  editingDevice.show_date ? 'Date' : '',
-                                  editingDevice.show_photo_date
-                                    ? 'Photo Date'
-                                    : '',
-                                  editingDevice.show_weather ? 'Weather' : '',
-                                ]
-                                  .filter(Boolean)
-                                  .join(' · ') || 'None'
-                              }}
-                            </span>
-                          </div>
-                        </v-expansion-panel-title>
-                        <v-expansion-panel-text>
-                          <div class="d-flex ga-4 mt-2 flex-wrap">
-                            <v-checkbox
-                              v-model="editingDevice.show_date"
-                              label="Show Date"
-                              color="primary"
-                              density="compact"
-                              hide-details
-                            ></v-checkbox>
-                            <v-checkbox
-                              v-model="editingDevice.show_photo_date"
-                              label="Show Photo Date"
-                              color="primary"
-                              density="compact"
-                              hide-details
-                            ></v-checkbox>
-                            <v-checkbox
-                              v-model="editingDevice.show_weather"
-                              label="Show Weather"
-                              color="primary"
-                              density="compact"
-                              hide-details
-                            ></v-checkbox>
-                          </div>
-                          <v-alert
-                            v-if="editingDevice.show_photo_date"
-                            type="info"
-                            variant="tonal"
-                            density="compact"
-                            class="mt-2"
-                          >
-                            If photos were synced before this feature was added,
-                            resync your image source to populate photo creation
-                            dates.
-                          </v-alert>
-                          <div v-if="editingDevice.show_date" class="mt-3">
+                      <!-- Auto Rotate Tab -->
+                      <v-tabs-window-item value="autoRotate">
+                        <!-- Image Source (server-side) -->
+                        <div class="text-subtitle-2 mt-2 mb-2">Image Source</div>
+                        <v-row dense class="mb-2">
+                          <v-col>
                             <v-select
-                              v-model="editingDevice.date_format"
-                              :items="dateFormatOptions"
-                              item-title="label"
-                              item-value="value"
-                              label="Date Format"
+                              v-model="selectedSource"
+                              :items="sourceOptions"
+                              label="Source"
                               variant="outlined"
                               density="compact"
                               hide-details
                             ></v-select>
-                          </div>
-                          <div
-                            v-if="editingDevice.show_weather"
-                            class="d-flex ga-2 mt-3"
-                          >
-                            <v-text-field
-                              v-model.number="editingDevice.weather_lat"
-                              label="Latitude"
-                              variant="outlined"
-                              density="compact"
-                              hide-details
-                              type="number"
-                            ></v-text-field>
-                            <v-text-field
-                              v-model.number="editingDevice.weather_lon"
-                              label="Longitude"
-                              variant="outlined"
-                              density="compact"
-                              hide-details
-                              type="number"
-                            ></v-text-field>
-                          </div>
-                        </v-expansion-panel-text>
-                      </v-expansion-panel>
+                          </v-col>
+                          <v-col cols="auto" class="d-flex align-center">
+                            <v-btn
+                              color="primary"
+                              variant="tonal"
+                              size="small"
+                              :loading="isBinding"
+                              @click="bindDeviceSource"
+                            >Bind</v-btn>
+                          </v-col>
+                        </v-row>
 
-                      <!-- Layout & Calendar -->
-                      <v-expansion-panel value="layout">
-                        <v-expansion-panel-title>
-                          <div class="d-flex align-center ga-2">
-                            <v-icon size="small"
-                              >mdi-view-dashboard-outline</v-icon
-                            >
-                            <span class="text-subtitle-2"
-                              >Layout & Calendar</span
-                            >
-                            <span class="text-caption text-grey ml-2">
-                              {{
-                                filteredLayoutOptions.find(
-                                  (o) => o.value === editingDevice.layout
-                                )?.title || 'Photo Overlay'
-                              }}{{
-                                editingDevice.show_calendar ? ' · Calendar' : ''
-                              }}
-                            </span>
-                          </div>
-                        </v-expansion-panel-title>
-                        <v-expansion-panel-text>
-                          <div class="d-flex flex-wrap ga-3 mb-3 mt-2">
-                            <v-card
-                              v-for="opt in filteredLayoutOptions"
-                              :key="opt.value"
-                              :variant="
-                                editingDevice.layout === opt.value
-                                  ? 'outlined'
-                                  : 'flat'
-                              "
-                              :color="
-                                editingDevice.layout === opt.value
-                                  ? 'primary'
-                                  : undefined
-                              "
-                              class="layout-preview-card pa-2 text-center"
-                              style="width: 110px; cursor: pointer"
-                              @click="editingDevice.layout = opt.value"
-                            >
-                              <div
-                                class="layout-preview mb-1"
-                                v-html="
-                                  getLayoutPreviewSvg(
-                                    opt.value,
-                                    editingDevice.orientation || 'landscape'
-                                  )
-                                "
-                              ></div>
-                              <div
-                                class="text-caption"
-                                style="line-height: 1.2"
-                              >
-                                {{ opt.title }}
-                              </div>
-                            </v-card>
-                          </div>
-                          <div
-                            class="text-caption text-grey ml-2 mb-3"
-                            v-if="editingDevice.layout"
-                          >
-                            {{ layoutDescriptions[editingDevice.layout] }}
-                          </div>
-                          <v-checkbox
-                            v-model="editingDevice.show_calendar"
-                            label="Show Google Calendar Events"
-                            color="primary"
-                            density="compact"
-                            hide-details
-                          ></v-checkbox>
-                          <v-alert
-                            v-if="
-                              editingDevice.show_calendar &&
-                              form.google_calendar_connected !== 'true'
-                            "
-                            type="warning"
-                            variant="tonal"
-                            density="compact"
-                            class="mt-2"
-                          >
-                            Google Calendar not connected. Connect in Data
-                            Sources &rarr; Google to enable calendar.
-                          </v-alert>
-                          <v-select
-                            v-if="
-                              editingDevice.show_calendar &&
-                              form.google_calendar_connected === 'true'
-                            "
-                            v-model="editingDevice.calendar_id"
-                            :items="calendars"
-                            item-title="summary"
-                            item-value="id"
-                            label="Select Calendar"
-                            variant="outlined"
-                            density="compact"
-                            class="mt-2"
-                            :loading="!calendarLoaded"
-                          ></v-select>
-                        </v-expansion-panel-text>
-                      </v-expansion-panel>
+                        <v-divider class="my-3" />
 
-                      <!-- AI Generation -->
-                      <v-expansion-panel value="ai">
-                        <v-expansion-panel-title>
-                          <div class="d-flex align-center ga-2">
-                            <v-icon size="small">mdi-creation</v-icon>
-                            <span class="text-subtitle-2">AI Generation</span>
-                            <span class="text-caption text-grey ml-2">
-                              {{
-                                editingDevice.ai_provider
-                                  ? (editingDevice.ai_provider === 'openai'
-                                      ? 'OpenAI'
-                                      : 'Gemini') +
-                                    (editingDevice.ai_model
-                                      ? ' · ' + editingDevice.ai_model
-                                      : '')
-                                  : 'Off'
-                              }}
-                            </span>
-                          </div>
-                        </v-expansion-panel-title>
-                        <v-expansion-panel-text>
-                          <v-select
-                            v-model="editingDevice.ai_provider"
-                            :items="[
-                              { title: 'None', value: '' },
-                              { title: 'OpenAI', value: 'openai' },
-                              { title: 'Google Gemini', value: 'google' },
-                            ]"
-                            label="AI Provider"
-                            variant="outlined"
-                            density="compact"
-                            class="mt-2 mb-3"
-                            hide-details
-                          ></v-select>
-
-                          <v-alert
-                            v-if="
-                              editingDevice.ai_provider === 'openai' &&
-                              !form.openai_api_key
-                            "
-                            type="warning"
-                            variant="tonal"
-                            density="compact"
-                            class="mb-3"
-                          >
-                            OpenAI API Key not configured. Please add it in Data
-                            Sources → AI Generation.
-                          </v-alert>
-
-                          <v-alert
-                            v-if="
-                              editingDevice.ai_provider === 'google' &&
-                              !form.google_api_key
-                            "
-                            type="warning"
-                            variant="tonal"
-                            density="compact"
-                            class="mb-3"
-                          >
-                            Google API Key not configured. Please add it in Data
-                            Sources → AI Generation.
-                          </v-alert>
-
-                          <v-select
-                            v-if="editingDevice.ai_provider"
-                            v-model="editingDevice.ai_model"
-                            :items="
-                              aiModelOptionsForProvider(
-                                editingDevice.ai_provider
-                              )
-                            "
-                            label="Model"
-                            variant="outlined"
-                            density="compact"
-                            class="mb-3"
-                            hide-details
-                          ></v-select>
-
-                          <v-textarea
-                            v-if="editingDevice.ai_provider"
-                            v-model="editingDevice.ai_prompt"
-                            label="Prompt"
-                            variant="outlined"
-                            density="compact"
-                            rows="3"
-                            placeholder="A beautiful landscape painting..."
-                            hide-details
-                          ></v-textarea>
-                        </v-expansion-panel-text>
-                      </v-expansion-panel>
-                    </v-expansion-panels>
-                  </v-card-text>
-                  <v-card-actions>
-                    <v-spacer></v-spacer>
-                    <v-btn
-                      color="grey"
-                      variant="text"
-                      @click="showEditDeviceDialog = false"
-                      >Cancel</v-btn
-                    >
-                    <v-btn color="primary" @click="saveDevice">{{
-                      isAddingDevice ? 'Add' : 'Save'
-                    }}</v-btn>
-                  </v-card-actions>
-                </v-card>
-              </v-dialog>
-
-              <!-- Device Config Dialog -->
-              <v-dialog v-model="showDeviceConfigDialog" max-width="600px" scrollable>
-                <v-card>
-                  <v-card-title class="d-flex align-center">
-                    <v-icon class="mr-2">mdi-cog-sync</v-icon>
-                    Remote Config — {{ deviceConfigTarget?.name }}
-                  </v-card-title>
-                  <v-card-text>
-                    <v-alert
-                      type="info"
-                      variant="tonal"
-                      class="mb-4"
-                      density="compact"
-                    >
-                      Changes are pushed to the device on its next image fetch.
-                    </v-alert>
-
-                    <v-expansion-panels v-model="deviceConfigPanels" multiple variant="accordion">
-                      <!-- Auto Rotate -->
-                      <v-expansion-panel value="auto_rotate">
-                        <v-expansion-panel-title>Auto Rotate</v-expansion-panel-title>
-                        <v-expansion-panel-text>
-                          <v-switch
-                            v-model="deviceConfig.auto_rotate"
-                            label="Enable Auto Rotate"
-                            color="primary"
-                            hide-details
-                            class="mb-2"
-                          />
+                        <!-- Auto Rotate (device config) -->
+                        <v-switch
+                          v-model="deviceConfig.auto_rotate"
+                          label="Enable Auto-Rotate"
+                          color="primary"
+                          hide-details
+                          class="mb-2"
+                        />
+                        <div class="ml-10">
                           <v-select
                             v-model="deviceConfig.rotate_interval"
                             :items="rotateIntervalOptions"
@@ -1556,51 +1214,33 @@
                             density="compact"
                             hide-details
                             class="mb-2"
+                            :disabled="!deviceConfig.auto_rotate"
                           />
-                          <v-switch
+                          <v-checkbox
                             v-model="deviceConfig.auto_rotate_aligned"
                             label="Align rotation to clock boundaries"
-                            color="primary"
                             hide-details
                             class="mb-2"
+                            :disabled="!deviceConfig.auto_rotate"
                           />
-                          <v-select
-                            v-model="deviceConfig.rotation_mode"
-                            :items="[{ title: 'Local Storage', value: 'storage' }, { title: 'URL', value: 'url' }]"
-                            label="Rotation Mode"
-                            variant="outlined"
-                            density="compact"
-                            hide-details
-                            class="mb-2"
-                          />
-                          <v-text-field
-                            v-if="deviceConfig.rotation_mode === 'url'"
-                            v-model="deviceConfig.image_url"
-                            label="Image URL"
-                            variant="outlined"
-                            density="compact"
-                            hide-details
-                            class="mb-2"
-                          />
-                        </v-expansion-panel-text>
-                      </v-expansion-panel>
+                        </div>
 
-                      <!-- Sleep Schedule -->
-                      <v-expansion-panel value="sleep">
-                        <v-expansion-panel-title>Sleep Schedule</v-expansion-panel-title>
-                        <v-expansion-panel-text>
-                          <v-switch
-                            v-model="deviceConfig.sleep_schedule_enabled"
-                            label="Enable Sleep Schedule"
-                            color="primary"
-                            hide-details
-                            class="mb-2"
-                          />
-                          <v-row v-if="deviceConfig.sleep_schedule_enabled">
+                        <v-divider class="my-3" />
+
+                        <!-- Sleep Schedule (device config) -->
+                        <v-switch
+                          v-model="deviceConfig.sleep_schedule_enabled"
+                          label="Enable Sleep Schedule"
+                          color="primary"
+                          hide-details
+                          class="mb-2"
+                        />
+                        <div v-if="deviceConfig.sleep_schedule_enabled" class="ml-10">
+                          <v-row dense>
                             <v-col cols="6">
                               <v-text-field
                                 v-model="deviceConfig.sleep_start_time"
-                                label="Sleep Start"
+                                label="From"
                                 type="time"
                                 variant="outlined"
                                 density="compact"
@@ -1610,7 +1250,7 @@
                             <v-col cols="6">
                               <v-text-field
                                 v-model="deviceConfig.sleep_end_time"
-                                label="Wake Up"
+                                label="To"
                                 type="time"
                                 variant="outlined"
                                 density="compact"
@@ -1618,89 +1258,197 @@
                               />
                             </v-col>
                           </v-row>
-                        </v-expansion-panel-text>
-                      </v-expansion-panel>
+                        </div>
 
-                      <!-- Display -->
-                      <v-expansion-panel value="display">
-                        <v-expansion-panel-title>Display</v-expansion-panel-title>
-                        <v-expansion-panel-text>
+                        <v-divider class="my-3" />
+
+                        <!-- Server-side display settings -->
+                        <div class="text-subtitle-2 mb-2">Display Options</div>
+                        <v-select
+                          v-model="editingDevice.display_mode"
+                          :items="[
+                            { title: 'Cover (fill, may crop)', value: 'cover' },
+                            { title: 'Fit (show entire photo)', value: 'fit' },
+                          ]"
+                          label="Photo Display Mode"
+                          variant="outlined"
+                          density="compact"
+                          hide-details
+                          class="mb-3"
+                        ></v-select>
+                        <v-checkbox
+                          v-model="editingDevice.enable_collage"
+                          label="Enable Collage Mode"
+                          color="primary"
+                          density="compact"
+                          hide-details
+                        ></v-checkbox>
+
+                        <!-- Overlay settings -->
+                        <div class="text-subtitle-2 mt-4 mb-2">Overlay</div>
+                        <div class="d-flex ga-4 flex-wrap">
+                          <v-checkbox
+                            v-model="editingDevice.show_date"
+                            label="Date"
+                            color="primary"
+                            density="compact"
+                            hide-details
+                          ></v-checkbox>
+                          <v-checkbox
+                            v-model="editingDevice.show_photo_date"
+                            label="Photo Date"
+                            color="primary"
+                            density="compact"
+                            hide-details
+                          ></v-checkbox>
+                          <v-checkbox
+                            v-model="editingDevice.show_weather"
+                            label="Weather"
+                            color="primary"
+                            density="compact"
+                            hide-details
+                          ></v-checkbox>
+                        </div>
+                        <div v-if="editingDevice.show_date" class="mt-2">
                           <v-select
-                            v-model="deviceConfig.display_orientation"
-                            :items="[{ title: 'Landscape', value: 'landscape' }, { title: 'Portrait', value: 'portrait' }]"
-                            label="Display Orientation"
+                            v-model="editingDevice.date_format"
+                            :items="dateFormatOptions"
+                            item-title="label"
+                            item-value="value"
+                            label="Date Format"
                             variant="outlined"
                             density="compact"
                             hide-details
-                            class="mb-2"
-                          />
-                        </v-expansion-panel-text>
-                      </v-expansion-panel>
-
-                      <!-- Power -->
-                      <v-expansion-panel value="power">
-                        <v-expansion-panel-title>Power</v-expansion-panel-title>
-                        <v-expansion-panel-text>
-                          <v-switch
-                            v-model="deviceConfig.deep_sleep_enabled"
-                            label="Enable Deep Sleep"
-                            color="primary"
+                          ></v-select>
+                        </div>
+                        <div v-if="editingDevice.show_weather" class="d-flex ga-2 mt-2">
+                          <v-text-field
+                            v-model.number="editingDevice.weather_lat"
+                            label="Latitude"
+                            variant="outlined"
+                            density="compact"
                             hide-details
-                          />
-                        </v-expansion-panel-text>
-                      </v-expansion-panel>
-                    </v-expansion-panels>
-                  </v-card-text>
-                  <v-card-actions>
-                    <v-spacer></v-spacer>
-                    <v-btn @click="showDeviceConfigDialog = false">Cancel</v-btn>
-                    <v-btn
-                      color="primary"
-                      @click="saveDeviceConfig"
-                      :loading="savingDeviceConfig"
-                    >Save</v-btn>
-                  </v-card-actions>
-                </v-card>
-              </v-dialog>
+                            type="number"
+                          ></v-text-field>
+                          <v-text-field
+                            v-model.number="editingDevice.weather_lon"
+                            label="Longitude"
+                            variant="outlined"
+                            density="compact"
+                            hide-details
+                            type="number"
+                          ></v-text-field>
+                        </div>
 
-              <!-- Bind Source Dialog -->
-              <v-dialog v-model="showBindSourceDialog" max-width="500px">
-                <v-card>
-                  <v-card-title>Bind Image Source</v-card-title>
-                  <v-card-text>
-                    <v-alert
-                      type="info"
-                      variant="tonal"
-                      class="mb-4"
-                      density="compact"
-                    >
-                      This will configure the device to fetch images from the
-                      selected source.
-                      <br />
-                      <strong>Note:</strong> This updates the device's
-                      configuration immediately.
-                    </v-alert>
-                    <v-select
-                      v-model="selectedSource"
-                      :items="sourceOptions"
-                      label="Select Source"
-                      variant="outlined"
-                    ></v-select>
+                        <!-- Layout -->
+                        <div class="text-subtitle-2 mt-4 mb-2">Layout</div>
+                        <div class="d-flex flex-wrap ga-3 mb-2">
+                          <v-card
+                            v-for="opt in filteredLayoutOptions"
+                            :key="opt.value"
+                            :variant="editingDevice.layout === opt.value ? 'outlined' : 'flat'"
+                            :color="editingDevice.layout === opt.value ? 'primary' : undefined"
+                            class="layout-preview-card pa-2 text-center"
+                            style="width: 100px; cursor: pointer"
+                            @click="editingDevice.layout = opt.value"
+                          >
+                            <div class="layout-preview mb-1" v-html="getLayoutPreviewSvg(opt.value, editingDevice.orientation || 'landscape')"></div>
+                            <div class="text-caption" style="line-height: 1.2">{{ opt.title }}</div>
+                          </v-card>
+                        </div>
+
+                        <!-- Calendar -->
+                        <v-checkbox
+                          v-model="editingDevice.show_calendar"
+                          label="Show Google Calendar Events"
+                          color="primary"
+                          density="compact"
+                          hide-details
+                        ></v-checkbox>
+                        <v-select
+                          v-if="editingDevice.show_calendar && form.google_calendar_connected === 'true'"
+                          v-model="editingDevice.calendar_id"
+                          :items="calendars"
+                          item-title="summary"
+                          item-value="id"
+                          label="Select Calendar"
+                          variant="outlined"
+                          density="compact"
+                          class="mt-2"
+                          :loading="!calendarLoaded"
+                        ></v-select>
+
+                        <!-- AI Generation -->
+                        <div class="text-subtitle-2 mt-4 mb-2">AI Generation</div>
+                        <v-select
+                          v-model="editingDevice.ai_provider"
+                          :items="[
+                            { title: 'None', value: '' },
+                            { title: 'OpenAI', value: 'openai' },
+                            { title: 'Google Gemini', value: 'google' },
+                          ]"
+                          label="AI Provider"
+                          variant="outlined"
+                          density="compact"
+                          hide-details
+                          class="mb-3"
+                        ></v-select>
+                        <v-select
+                          v-if="editingDevice.ai_provider"
+                          v-model="editingDevice.ai_model"
+                          :items="aiModelOptionsForProvider(editingDevice.ai_provider)"
+                          label="Model"
+                          variant="outlined"
+                          density="compact"
+                          hide-details
+                          class="mb-3"
+                        ></v-select>
+                        <v-textarea
+                          v-if="editingDevice.ai_provider"
+                          v-model="editingDevice.ai_prompt"
+                          label="Prompt"
+                          variant="outlined"
+                          density="compact"
+                          rows="3"
+                          placeholder="A beautiful landscape painting..."
+                          hide-details
+                        ></v-textarea>
+                      </v-tabs-window-item>
+
+                      <!-- Power Tab -->
+                      <v-tabs-window-item value="power">
+                        <v-switch
+                          v-model="deviceConfig.deep_sleep_enabled"
+                          label="Enable Deep Sleep"
+                          color="primary"
+                          class="mt-2"
+                          hide-details
+                        />
+                        <v-alert type="info" variant="tonal" density="compact" class="mt-4">
+                          <strong>Power Consumption Notice</strong><br />
+                          When deep sleep is enabled, the device sleeps between image rotations to save power.
+                          WiFi is only active during image fetch.
+                        </v-alert>
+                      </v-tabs-window-item>
+                    </v-tabs-window>
                   </v-card-text>
                   <v-card-actions>
-                    <v-spacer></v-spacer>
                     <v-btn
-                      color="grey"
+                      v-if="!isAddingDevice"
+                      color="info"
                       variant="text"
-                      @click="showBindSourceDialog = false"
-                      >Cancel</v-btn
+                      size="small"
+                      :loading="syncingFromDevice"
+                      @click="syncFromDevice"
                     >
-                    <v-btn
-                      color="primary"
-                      @click="bindDeviceSource"
-                      :loading="isBinding"
-                      >Bind & Configure</v-btn
-                    >
+                      <v-icon start>mdi-sync</v-icon>
+                      Sync from Device
+                    </v-btn>
+                    <v-spacer></v-spacer>
+                    <v-btn color="grey" variant="text" @click="showEditDeviceDialog = false">Cancel</v-btn>
+                    <v-btn color="primary" @click="saveDevice" :loading="savingDeviceConfig">{{
+                      isAddingDevice ? 'Add' : 'Save'
+                    }}</v-btn>
                   </v-card-actions>
                 </v-card>
               </v-dialog>
@@ -1769,9 +1517,7 @@ const activeDataSourceTab = ref('immich');
 const galleryTab = ref('immich');
 const confirmDialog = ref();
 
-// Device Binding State
-const showBindSourceDialog = ref(false);
-const bindingDevice = ref<Device | null>(null);
+// Image Source Binding State
 const selectedSource = ref('immich');
 const sourceOptions = [
   { title: 'Immich', value: 'immich' },
@@ -1783,24 +1529,17 @@ const sourceOptions = [
 ];
 const isBinding = ref(false);
 
-const openBindSourceDialog = (device: Device) => {
-  bindingDevice.value = device;
-  selectedSource.value = 'immich';
-  showBindSourceDialog.value = true;
-};
-
 const bindDeviceSource = async () => {
-  if (!bindingDevice.value) return;
+  if (!editingDevice.id) return;
   isBinding.value = true;
   try {
     const res = await configureDeviceSource(
-      bindingDevice.value.id,
+      editingDevice.id,
       selectedSource.value
     );
-    showMessage(
-      `Device configured to use source: ${selectedSource.value}. Image URL: ${res.url}`
-    );
-    showBindSourceDialog.value = false;
+    showMessage(`Image source bound: ${selectedSource.value}. URL: ${res.url}`);
+    // Reload device config to reflect the new image_url
+    await loadDeviceConfig(editingDevice.id);
   } catch (e: any) {
     showMessage(
       'Failed to bind source: ' + (e.response?.data?.error || e.message),
@@ -1907,15 +1646,14 @@ const loadCalendars = async () => {
   }
 };
 
-// Edit Device State (declared here because computed/watch below reference editingDevice)
+// Edit Device State
 const showEditDeviceDialog = ref(false);
 const editingDevice = reactive<Partial<Device>>({});
-
-// Device Config Dialog State
-const showDeviceConfigDialog = ref(false);
-const deviceConfigTarget = ref<Device | null>(null);
-const deviceConfigPanels = ref<string[]>(['auto_rotate']);
+const deviceDialogTab = ref('general');
 const savingDeviceConfig = ref(false);
+const syncingFromDevice = ref(false);
+
+// Device config (synced remotely to device)
 const deviceConfig = reactive<Record<string, any>>({
   auto_rotate: false,
   rotate_interval: 3600,
@@ -1941,16 +1679,10 @@ const rotateIntervalOptions = [
   { title: '24 hours', value: 86400 },
 ];
 
-const openDeviceConfigDialog = async (device: Device) => {
-  deviceConfigTarget.value = device;
-  deviceConfigPanels.value = ['auto_rotate'];
-  showDeviceConfigDialog.value = true;
-
+const loadDeviceConfig = async (deviceId: number) => {
   try {
-    const data = await getDeviceConfig(device.id);
+    const data = await getDeviceConfig(deviceId);
     const cfg = data.config ? (typeof data.config === 'string' ? JSON.parse(data.config) : data.config) : {};
-
-    // Merge loaded config with defaults
     Object.assign(deviceConfig, {
       auto_rotate: cfg.auto_rotate ?? false,
       rotate_interval: cfg.rotate_interval ?? 3600,
@@ -1958,11 +1690,9 @@ const openDeviceConfigDialog = async (device: Device) => {
       rotation_mode: cfg.rotation_mode ?? 'storage',
       image_url: cfg.image_url ?? '',
       sleep_schedule_enabled: cfg.sleep_schedule_enabled ?? false,
-      display_orientation: cfg.display_orientation ?? 'landscape',
+      display_orientation: cfg.display_orientation ?? deviceConfig.display_orientation,
       deep_sleep_enabled: cfg.deep_sleep_enabled ?? true,
     });
-
-    // Convert sleep schedule minutes to HH:MM
     const startMin = cfg.sleep_schedule_start ?? 1380;
     deviceConfig.sleep_start_time = `${String(Math.floor(startMin / 60)).padStart(2, '0')}:${String(startMin % 60).padStart(2, '0')}`;
     const endMin = cfg.sleep_schedule_end ?? 420;
@@ -1972,35 +1702,36 @@ const openDeviceConfigDialog = async (device: Device) => {
   }
 };
 
-const saveDeviceConfig = async () => {
-  if (!deviceConfigTarget.value) return;
-  savingDeviceConfig.value = true;
-
+const syncFromDevice = async () => {
+  if (!editingDevice.id) return;
+  syncingFromDevice.value = true;
   try {
-    // Convert HH:MM back to minutes
-    const [startH, startM] = deviceConfig.sleep_start_time.split(':').map(Number);
-    const [endH, endM] = deviceConfig.sleep_end_time.split(':').map(Number);
-
-    const cfg: Record<string, any> = {
-      auto_rotate: deviceConfig.auto_rotate,
-      rotate_interval: deviceConfig.rotate_interval,
-      auto_rotate_aligned: deviceConfig.auto_rotate_aligned,
-      rotation_mode: deviceConfig.rotation_mode,
-      image_url: deviceConfig.image_url,
-      sleep_schedule_enabled: deviceConfig.sleep_schedule_enabled,
-      sleep_schedule_start: startH * 60 + startM,
-      sleep_schedule_end: endH * 60 + endM,
-      display_orientation: deviceConfig.display_orientation,
-      deep_sleep_enabled: deviceConfig.deep_sleep_enabled,
-    };
-
-    await updateDeviceConfig(deviceConfigTarget.value.id, { config: cfg });
-    showDeviceConfigDialog.value = false;
-    showMessage('Device config saved. Will sync on next image fetch.');
+    await updateDevice(
+      editingDevice.id,
+      '', '', 0, 0, '', true,
+      editingDevice.enable_collage!,
+      editingDevice.show_date!,
+      editingDevice.show_photo_date || false,
+      editingDevice.show_weather!,
+      editingDevice.weather_lat || 0,
+      editingDevice.weather_lon || 0,
+      editingDevice.ai_provider || '',
+      editingDevice.ai_model || '',
+      editingDevice.ai_prompt || '',
+      editingDevice.layout || 'photo_overlay',
+      editingDevice.display_mode || 'cover',
+      editingDevice.show_calendar || false,
+      editingDevice.calendar_id || ''
+    );
+    await loadDevices();
+    // Re-load the updated device into the dialog
+    const updated = availableDevices.value.find((d: Device) => d.id === editingDevice.id);
+    if (updated) Object.assign(editingDevice, updated);
+    showMessage('Settings synced from device');
   } catch (e: any) {
-    showMessage(e?.response?.data?.error || 'Failed to save config', true);
+    showMessage('Failed to sync: ' + (e.response?.data?.error || e.message), true);
   } finally {
-    savingDeviceConfig.value = false;
+    syncingFromDevice.value = false;
   }
 };
 
@@ -2159,43 +1890,37 @@ watch(
 );
 
 const isAddingDevice = ref(false);
-const deviceDialogPanels = ref<string[]>(['general']);
 
 const openAddDeviceDialog = () => {
-  // Reset editingDevice to defaults for a new device
   Object.assign(editingDevice, {
-    id: undefined,
-    name: '',
-    host: '',
-    width: 0,
-    height: 0,
-    orientation: '',
-    use_device_parameter: false,
-    enable_collage: false,
-    show_date: true,
-    show_photo_date: false,
-    show_weather: true,
-    weather_lat: null,
-    weather_lon: null,
-    ai_provider: '',
-    ai_model: '',
-    ai_prompt: '',
-    layout: 'photo_overlay',
-    display_mode: 'cover',
-    show_calendar: false,
-    calendar_id: '',
-    date_format: '',
+    id: undefined, name: '', host: '', width: 0, height: 0, orientation: '',
+    use_device_parameter: false, enable_collage: false,
+    show_date: true, show_photo_date: false, show_weather: true,
+    weather_lat: null, weather_lon: null,
+    ai_provider: '', ai_model: '', ai_prompt: '',
+    layout: 'photo_overlay', display_mode: 'cover',
+    show_calendar: false, calendar_id: '', date_format: '',
+  });
+  Object.assign(deviceConfig, {
+    auto_rotate: false, rotate_interval: 3600, auto_rotate_aligned: true,
+    rotation_mode: 'storage', image_url: '',
+    sleep_schedule_enabled: false, sleep_start_time: '23:00', sleep_end_time: '07:00',
+    display_orientation: 'landscape', deep_sleep_enabled: true,
   });
   isAddingDevice.value = true;
-  deviceDialogPanels.value = ['general'];
+  deviceDialogTab.value = 'general';
   showEditDeviceDialog.value = true;
 };
 
-const editDevice = (device: Device) => {
+const editDevice = async (device: Device) => {
   Object.assign(editingDevice, device);
+  // Initialize display_orientation from device's orientation
+  deviceConfig.display_orientation = device.orientation || 'landscape';
   isAddingDevice.value = false;
-  deviceDialogPanels.value = ['general'];
+  deviceDialogTab.value = 'general';
   showEditDeviceDialog.value = true;
+  // Load device remote config
+  await loadDeviceConfig(device.id);
 };
 
 const saveDevice = async () => {
@@ -2205,17 +1930,16 @@ const saveDevice = async () => {
   }
   if (editingDevice.show_weather) {
     if (
-      editingDevice.weather_lat === null ||
-      editingDevice.weather_lat === undefined ||
+      editingDevice.weather_lat === null || editingDevice.weather_lat === undefined ||
       isNaN(editingDevice.weather_lat) ||
-      editingDevice.weather_lon === null ||
-      editingDevice.weather_lon === undefined ||
+      editingDevice.weather_lon === null || editingDevice.weather_lon === undefined ||
       isNaN(editingDevice.weather_lon)
     ) {
       showMessage('Latitude and Longitude are required for weather', true);
       return;
     }
   }
+  savingDeviceConfig.value = true;
   try {
     if (isAddingDevice.value) {
       await addDevice({
@@ -2236,38 +1960,51 @@ const saveDevice = async () => {
       showMessage('Device added successfully');
     } else {
       if (!editingDevice.id) return;
+      // Save server-side device fields
       await updateDevice(
         editingDevice.id,
-        editingDevice.name!,
-        editingDevice.host!,
-        editingDevice.width!,
-        editingDevice.height!,
-        editingDevice.orientation!,
+        editingDevice.name!, editingDevice.host!,
+        editingDevice.width!, editingDevice.height!,
+        deviceConfig.display_orientation || editingDevice.orientation!,
         editingDevice.use_device_parameter!,
         editingDevice.enable_collage!,
         editingDevice.show_date!,
         editingDevice.show_photo_date || false,
         editingDevice.show_weather!,
-        editingDevice.weather_lat || 0,
-        editingDevice.weather_lon || 0,
-        editingDevice.ai_provider || '',
-        editingDevice.ai_model || '',
-        editingDevice.ai_prompt || '',
+        editingDevice.weather_lat || 0, editingDevice.weather_lon || 0,
+        editingDevice.ai_provider || '', editingDevice.ai_model || '', editingDevice.ai_prompt || '',
         editingDevice.layout || 'photo_overlay',
         editingDevice.display_mode || 'cover',
         editingDevice.show_calendar || false,
         editingDevice.calendar_id || '',
         editingDevice.date_format || ''
       );
-      showMessage('Device updated successfully');
+
+      // Save device remote config
+      const [startH, startM] = deviceConfig.sleep_start_time.split(':').map(Number);
+      const [endH, endM] = deviceConfig.sleep_end_time.split(':').map(Number);
+      await updateDeviceConfig(editingDevice.id, {
+        config: {
+          auto_rotate: deviceConfig.auto_rotate,
+          rotate_interval: deviceConfig.rotate_interval,
+          auto_rotate_aligned: deviceConfig.auto_rotate_aligned,
+          rotation_mode: deviceConfig.rotation_mode,
+          image_url: deviceConfig.image_url,
+          sleep_schedule_enabled: deviceConfig.sleep_schedule_enabled,
+          sleep_schedule_start: startH * 60 + startM,
+          sleep_schedule_end: endH * 60 + endM,
+          display_orientation: deviceConfig.display_orientation,
+          deep_sleep_enabled: deviceConfig.deep_sleep_enabled,
+        },
+      });
+      showMessage('Device saved. Config changes sync on next image fetch.');
     }
     await loadDevices();
     showEditDeviceDialog.value = false;
   } catch (e: any) {
-    showMessage(
-      'Failed to save device: ' + (e.response?.data?.error || e.message),
-      true
-    );
+    showMessage('Failed to save device: ' + (e.response?.data?.error || e.message), true);
+  } finally {
+    savingDeviceConfig.value = false;
   }
 };
 
