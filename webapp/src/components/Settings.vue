@@ -1132,37 +1132,78 @@
                     <v-tab value="power">Power</v-tab>
                     <v-tab value="homeAssistant">Home Assistant</v-tab>
                     <v-tab value="processing">Processing</v-tab>
+                    <v-tab value="ai">AI Generation</v-tab>
                     <v-tab value="palette">Palette</v-tab>
                   </v-tabs>
                   <v-card-text style="min-height: 400px">
                     <v-tabs-window v-model="deviceDialogTab">
                       <!-- General Tab -->
                       <v-tabs-window-item value="general">
-                        <v-text-field
-                          v-model="editingDevice.name"
-                          label="Device Name"
-                          variant="outlined"
-                          density="compact"
-                          hide-details
-                          class="mt-2 mb-3"
-                        ></v-text-field>
-                        <v-text-field
-                          v-model="editingDevice.host"
-                          label="Host / IP"
-                          variant="outlined"
-                          density="compact"
-                          hide-details
-                          class="mb-3"
-                        ></v-text-field>
-                        <v-select
-                          v-model="deviceConfig.display_orientation"
-                          :items="[{ title: 'Landscape', value: 'landscape' }, { title: 'Portrait', value: 'portrait' }]"
-                          label="Display Orientation"
-                          variant="outlined"
-                          density="compact"
-                          hide-details
-                          class="mb-3"
-                        ></v-select>
+                        <v-row class="mt-1">
+                          <v-col cols="12" md="6">
+                            <v-text-field
+                              v-model="editingDevice.name"
+                              label="Device Name"
+                              variant="outlined"
+                              density="compact"
+                              hide-details
+                            ></v-text-field>
+                          </v-col>
+                        </v-row>
+                        <v-row>
+                          <v-col cols="12" md="6">
+                            <v-text-field
+                              v-model="editingDevice.host"
+                              label="Host / IP"
+                              variant="outlined"
+                              density="compact"
+                              hide-details
+                            ></v-text-field>
+                          </v-col>
+                        </v-row>
+                        <v-row>
+                          <v-col cols="12" md="6">
+                            <v-select
+                              v-model="deviceConfig.display_orientation"
+                              :items="[{ title: 'Landscape', value: 'landscape' }, { title: 'Portrait', value: 'portrait' }]"
+                              label="Display Orientation"
+                              variant="outlined"
+                              density="compact"
+                            ></v-select>
+                          </v-col>
+                          <v-col cols="12" md="6">
+                            <v-select
+                              v-model="deviceConfig.display_rotation_deg"
+                              :items="[{ title: '0°', value: 0 }, { title: '90°', value: 90 }, { title: '180°', value: 180 }, { title: '270°', value: 270 }]"
+                              label="Display Rotation (deg)"
+                              variant="outlined"
+                              density="compact"
+                            ></v-select>
+                          </v-col>
+                        </v-row>
+                        <v-row>
+                          <v-col cols="12" md="6">
+                            <v-text-field
+                              v-model.number="deviceConfig.timezone_offset"
+                              label="Timezone (UTC offset)"
+                              type="number" :min="-12" :max="14" :step="0.5"
+                              variant="outlined"
+                              density="compact"
+                              hint="e.g., -8 for PST, +1 for CET, +8 for CST"
+                              persistent-hint
+                            ></v-text-field>
+                          </v-col>
+                          <v-col cols="12" md="6">
+                            <v-text-field
+                              v-model="deviceConfig.ntp_server"
+                              label="NTP Server"
+                              variant="outlined"
+                              density="compact"
+                              hint="e.g., pool.ntp.org"
+                              persistent-hint
+                            ></v-text-field>
+                          </v-col>
+                        </v-row>
                         <v-checkbox
                           v-model="editingDevice.use_device_parameter"
                           label="Fetch processing parameters from device"
@@ -1381,8 +1422,184 @@
                           :loading="!calendarLoaded"
                         ></v-select>
 
-                        <!-- AI Generation -->
-                        <div class="text-subtitle-2 mt-4 mb-2">AI Generation</div>
+                      </v-tabs-window-item>
+
+                      <!-- Power Tab -->
+                      <v-tabs-window-item value="power">
+                        <v-switch
+                          v-model="deviceConfig.deep_sleep_enabled"
+                          label="Enable Deep Sleep"
+                          color="primary"
+                          class="mt-2"
+                          hide-details
+                        />
+                        <v-alert type="info" variant="tonal" density="compact" class="mt-4">
+                          <strong>Power Consumption Notice</strong><br />
+                          When deep sleep is enabled, the device sleeps between image rotations to save power.
+                          WiFi is only active during image fetch.
+                        </v-alert>
+                      </v-tabs-window-item>
+
+                      <!-- Home Assistant Tab -->
+                      <v-tabs-window-item value="homeAssistant">
+                        <v-text-field
+                          v-model="deviceConfig.ha_url"
+                          label="Home Assistant URL"
+                          variant="outlined"
+                          density="compact"
+                          class="mt-2"
+                          hint="e.g., http://homeassistant.local:8123"
+                          persistent-hint
+                          placeholder="http://homeassistant.local:8123"
+                        />
+                      </v-tabs-window-item>
+
+                      <!-- Processing Tab (matches device webapp ProcessingControls) -->
+                      <v-tabs-window-item value="processing">
+                        <v-row class="mt-2">
+                          <v-col cols="12" md="4">
+                            <v-select
+                              v-model="deviceProcessing.ditherAlgorithm"
+                              :items="[
+                                { title: 'Floyd-Steinberg', value: 'floyd-steinberg' },
+                                { title: 'Stucki', value: 'stucki' },
+                                { title: 'Burkes', value: 'burkes' },
+                                { title: 'Sierra', value: 'sierra' },
+                              ]"
+                              label="Dithering Algorithm"
+                              variant="outlined"
+                              density="compact"
+                            />
+                          </v-col>
+                          <v-col cols="12" md="4">
+                            <v-select
+                              v-model="deviceProcessing.colorMethod"
+                              :items="[{ title: 'RGB', value: 'rgb' }, { title: 'LAB', value: 'lab' }]"
+                              label="Color Matching"
+                              variant="outlined"
+                              density="compact"
+                            />
+                          </v-col>
+                        </v-row>
+
+                        <v-row>
+                          <v-col cols="12" md="4">
+                            <v-slider
+                              v-model="deviceProcessing.exposure"
+                              :min="0.5" :max="2.0" :step="0.01"
+                              label="Exposure"
+                              thumb-label color="primary"
+                            >
+                              <template #append>
+                                <span class="text-body-2">{{ deviceProcessing.exposure.toFixed(2) }}</span>
+                              </template>
+                            </v-slider>
+                          </v-col>
+                          <v-col cols="12" md="4">
+                            <v-slider
+                              v-model="deviceProcessing.saturation"
+                              :min="0.5" :max="2.0" :step="0.01"
+                              label="Saturation"
+                              thumb-label color="primary"
+                            >
+                              <template #append>
+                                <span class="text-body-2">{{ deviceProcessing.saturation.toFixed(2) }}</span>
+                              </template>
+                            </v-slider>
+                          </v-col>
+                          <v-col cols="12" md="4">
+                            <v-checkbox
+                              v-model="deviceProcessing.compressDynamicRange"
+                              label="Compress Dynamic Range"
+                              hint="Map brightness to display's actual white point"
+                              persistent-hint
+                              color="primary"
+                            />
+                          </v-col>
+                        </v-row>
+
+                        <v-row>
+                          <v-col cols="12" md="4">
+                            <v-select
+                              v-model="deviceProcessing.toneMode"
+                              :items="[{ title: 'Contrast', value: 'contrast' }, { title: 'S-Curve', value: 'scurve' }]"
+                              label="Tone Mapping"
+                              variant="outlined"
+                              density="compact"
+                            />
+                          </v-col>
+                          <v-col v-if="deviceProcessing.toneMode !== 'scurve'" cols="12" md="4">
+                            <v-slider
+                              v-model="deviceProcessing.contrast"
+                              :min="0.5" :max="2.0" :step="0.01"
+                              label="Contrast"
+                              thumb-label color="primary"
+                            >
+                              <template #append>
+                                <span class="text-body-2">{{ deviceProcessing.contrast.toFixed(2) }}</span>
+                              </template>
+                            </v-slider>
+                          </v-col>
+                        </v-row>
+
+                        <v-expand-transition>
+                          <v-card v-if="deviceProcessing.toneMode === 'scurve'" variant="tonal" class="mt-2">
+                            <v-card-subtitle class="pt-3">S-Curve Parameters</v-card-subtitle>
+                            <v-card-text>
+                              <v-row>
+                                <v-col cols="12" md="6">
+                                  <v-slider v-model="deviceProcessing.strength" :min="0" :max="1" :step="0.01" label="Strength" thumb-label color="primary">
+                                    <template #append><span class="text-body-2">{{ deviceProcessing.strength.toFixed(2) }}</span></template>
+                                  </v-slider>
+                                </v-col>
+                                <v-col cols="12" md="6">
+                                  <v-slider v-model="deviceProcessing.shadowBoost" :min="0" :max="1" :step="0.01" label="Shadow Boost" thumb-label color="primary">
+                                    <template #append><span class="text-body-2">{{ deviceProcessing.shadowBoost.toFixed(2) }}</span></template>
+                                  </v-slider>
+                                </v-col>
+                                <v-col cols="12" md="6">
+                                  <v-slider v-model="deviceProcessing.highlightCompress" :min="0.5" :max="5" :step="0.01" label="Highlight Compress" thumb-label color="primary">
+                                    <template #append><span class="text-body-2">{{ deviceProcessing.highlightCompress.toFixed(2) }}</span></template>
+                                  </v-slider>
+                                </v-col>
+                                <v-col cols="12" md="6">
+                                  <v-slider v-model="deviceProcessing.midpoint" :min="0.3" :max="0.7" :step="0.01" label="Midpoint" thumb-label color="primary">
+                                    <template #append><span class="text-body-2">{{ deviceProcessing.midpoint.toFixed(2) }}</span></template>
+                                  </v-slider>
+                                </v-col>
+                              </v-row>
+                            </v-card-text>
+                          </v-card>
+                        </v-expand-transition>
+                      </v-tabs-window-item>
+
+                      <!-- AI Generation Tab -->
+                      <v-tabs-window-item value="ai">
+                        <v-alert type="info" variant="tonal" density="compact" class="mt-2 mb-4">
+                          API keys are stored on the device for client-side AI image generation.
+                          Server-side AI provider/model/prompt are used when the image source is set to AI Generation.
+                        </v-alert>
+
+                        <v-text-field
+                          v-model="deviceConfig.openai_api_key"
+                          label="OpenAI API Key"
+                          variant="outlined"
+                          type="password"
+                          hint="sk-..."
+                          persistent-hint
+                          class="mb-2"
+                        />
+                        <v-text-field
+                          v-model="deviceConfig.google_api_key"
+                          label="Google Gemini API Key"
+                          variant="outlined"
+                          type="password"
+                          class="mb-4"
+                        />
+
+                        <v-divider class="mb-4" />
+                        <div class="text-subtitle-2 mb-2">Server-Side AI Generation</div>
+
                         <v-select
                           v-model="editingDevice.ai_provider"
                           :items="[
@@ -1418,113 +1635,46 @@
                         ></v-textarea>
                       </v-tabs-window-item>
 
-                      <!-- Power Tab -->
-                      <v-tabs-window-item value="power">
-                        <v-switch
-                          v-model="deviceConfig.deep_sleep_enabled"
-                          label="Enable Deep Sleep"
-                          color="primary"
-                          class="mt-2"
-                          hide-details
-                        />
-                        <v-alert type="info" variant="tonal" density="compact" class="mt-4">
-                          <strong>Power Consumption Notice</strong><br />
-                          When deep sleep is enabled, the device sleeps between image rotations to save power.
-                          WiFi is only active during image fetch.
-                        </v-alert>
-                      </v-tabs-window-item>
-
-                      <!-- Home Assistant Tab -->
-                      <v-tabs-window-item value="homeAssistant">
-                        <v-text-field
-                          v-model="deviceConfig.ha_url"
-                          label="Home Assistant URL"
-                          variant="outlined"
-                          density="compact"
-                          class="mt-2"
-                          hint="e.g., http://homeassistant.local:8123"
-                          persistent-hint
-                          placeholder="http://homeassistant.local:8123"
-                        />
-                      </v-tabs-window-item>
-
-                      <!-- Processing Tab -->
-                      <v-tabs-window-item value="processing">
-                        <div class="mt-2">
-                          <v-slider v-model="deviceProcessing.exposure" label="Exposure" :min="0.5" :max="2" :step="0.05" thumb-label hide-details class="mb-2" />
-                          <v-slider v-model="deviceProcessing.saturation" label="Saturation" :min="0" :max="2" :step="0.05" thumb-label hide-details class="mb-2" />
-                          <v-slider v-model="deviceProcessing.contrast" label="Contrast" :min="0.5" :max="2" :step="0.05" thumb-label hide-details class="mb-2" />
-                          <v-slider v-model="deviceProcessing.strength" label="Strength" :min="0" :max="1" :step="0.05" thumb-label hide-details class="mb-2" />
-                          <v-slider v-model="deviceProcessing.shadowBoost" label="Shadow Boost" :min="0" :max="1" :step="0.05" thumb-label hide-details class="mb-2" />
-                          <v-slider v-model="deviceProcessing.highlightCompress" label="Highlight Compress" :min="0" :max="1" :step="0.05" thumb-label hide-details class="mb-2" />
-                          <v-slider v-model="deviceProcessing.midpoint" label="Midpoint" :min="0" :max="1" :step="0.05" thumb-label hide-details class="mb-4" />
-                          <v-select
-                            v-model="deviceProcessing.toneMode"
-                            :items="[{ title: 'S-Curve', value: 'scurve' }, { title: 'Contrast', value: 'contrast' }]"
-                            label="Tone Mode"
-                            variant="outlined"
-                            density="compact"
-                            hide-details
-                            class="mb-3"
-                          />
-                          <v-select
-                            v-model="deviceProcessing.colorMethod"
-                            :items="[{ title: 'RGB', value: 'rgb' }, { title: 'LAB', value: 'lab' }]"
-                            label="Color Method"
-                            variant="outlined"
-                            density="compact"
-                            hide-details
-                            class="mb-3"
-                          />
-                          <v-select
-                            v-model="deviceProcessing.ditherAlgorithm"
-                            :items="[
-                              { title: 'Floyd-Steinberg', value: 'floyd-steinberg' },
-                              { title: 'Stucki', value: 'stucki' },
-                              { title: 'Burkes', value: 'burkes' },
-                              { title: 'Sierra', value: 'sierra' },
-                            ]"
-                            label="Dither Algorithm"
-                            variant="outlined"
-                            density="compact"
-                            hide-details
-                            class="mb-3"
-                          />
-                          <v-checkbox
-                            v-model="deviceProcessing.compressDynamicRange"
-                            label="Compress Dynamic Range"
-                            color="primary"
-                            density="compact"
-                            hide-details
-                          />
-                        </div>
-                      </v-tabs-window-item>
-
-                      <!-- Palette Tab -->
+                      <!-- Palette Tab (matches device webapp PaletteCalibration) -->
                       <v-tabs-window-item value="palette">
-                        <div class="mt-2">
-                          <div v-for="colorName in paletteColors" :key="colorName" class="d-flex align-center ga-3 mb-2">
-                            <span class="text-capitalize" style="width: 60px">{{ colorName }}</span>
-                            <v-text-field
-                              v-model.number="devicePalette[colorName].r"
-                              label="R" type="number" :min="0" :max="255"
-                              variant="outlined" density="compact" hide-details style="max-width: 80px"
-                            />
-                            <v-text-field
-                              v-model.number="devicePalette[colorName].g"
-                              label="G" type="number" :min="0" :max="255"
-                              variant="outlined" density="compact" hide-details style="max-width: 80px"
-                            />
-                            <v-text-field
-                              v-model.number="devicePalette[colorName].b"
-                              label="B" type="number" :min="0" :max="255"
-                              variant="outlined" density="compact" hide-details style="max-width: 80px"
-                            />
-                            <div
-                              :style="{ backgroundColor: `rgb(${devicePalette[colorName].r},${devicePalette[colorName].g},${devicePalette[colorName].b})`, width: '24px', height: '24px', borderRadius: '4px', border: '1px solid #ccc' }"
-                            ></div>
-                          </div>
-                        </div>
+                        <v-row class="mt-2">
+                          <v-col v-for="colorName in paletteColors" :key="colorName" cols="6" md="4" lg="2">
+                            <v-card variant="outlined">
+                              <div
+                                class="color-swatch"
+                                :style="{
+                                  backgroundColor: `rgb(${devicePalette[colorName].r}, ${devicePalette[colorName].g}, ${devicePalette[colorName].b})`,
+                                }"
+                              />
+                              <v-card-text class="pa-2">
+                                <div class="text-subtitle-2 text-capitalize mb-2">{{ colorName }}</div>
+                                <v-text-field
+                                  v-model.number="devicePalette[colorName].r"
+                                  label="R" type="number" :min="0" :max="255"
+                                  density="compact" variant="outlined" class="mb-1"
+                                />
+                                <v-text-field
+                                  v-model.number="devicePalette[colorName].g"
+                                  label="G" type="number" :min="0" :max="255"
+                                  density="compact" variant="outlined" class="mb-1"
+                                />
+                                <v-text-field
+                                  v-model.number="devicePalette[colorName].b"
+                                  label="B" type="number" :min="0" :max="255"
+                                  density="compact" variant="outlined"
+                                />
+                              </v-card-text>
+                            </v-card>
+                          </v-col>
+                        </v-row>
+                        <v-btn
+                          variant="text" color="error" size="small" class="mt-2"
+                          @click="Object.assign(devicePalette, {
+                            black: { r: 2, g: 2, b: 2 }, white: { r: 190, g: 200, b: 200 },
+                            yellow: { r: 205, g: 202, b: 0 }, red: { r: 135, g: 19, b: 0 },
+                            blue: { r: 5, g: 64, b: 158 }, green: { r: 39, g: 102, b: 60 },
+                          })"
+                        >Reset to Defaults</v-btn>
                       </v-tabs-window-item>
                     </v-tabs-window>
                   </v-card-text>
@@ -1760,8 +1910,13 @@ const deviceConfig = reactive<Record<string, any>>({
   sleep_start_time: '23:00',
   sleep_end_time: '07:00',
   display_orientation: 'landscape',
+  display_rotation_deg: 180,
+  timezone_offset: 0,
+  ntp_server: 'pool.ntp.org',
   deep_sleep_enabled: true,
   ha_url: '',
+  openai_api_key: '',
+  google_api_key: '',
 });
 
 // Device processing settings (synced remotely)
@@ -1817,13 +1972,29 @@ const loadDeviceConfig = async (deviceId: number) => {
       image_url: cfg.image_url ?? '',
       sleep_schedule_enabled: cfg.sleep_schedule_enabled ?? false,
       display_orientation: cfg.display_orientation ?? deviceConfig.display_orientation,
+      display_rotation_deg: cfg.display_rotation_deg ?? 180,
       deep_sleep_enabled: cfg.deep_sleep_enabled ?? true,
       ha_url: cfg.ha_url ?? '',
+      ntp_server: cfg.ntp_server ?? 'pool.ntp.org',
+      openai_api_key: cfg.openai_api_key ?? '',
+      google_api_key: cfg.google_api_key ?? '',
     });
     const startMin = cfg.sleep_schedule_start ?? 1380;
     deviceConfig.sleep_start_time = `${String(Math.floor(startMin / 60)).padStart(2, '0')}:${String(startMin % 60).padStart(2, '0')}`;
     const endMin = cfg.sleep_schedule_end ?? 420;
     deviceConfig.sleep_end_time = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+
+    // Parse POSIX timezone (e.g., "UTC-8" → 8, "UTC+1" → -1, POSIX sign is inverted)
+    const tz = cfg.timezone || 'UTC0';
+    const tzMatch = tz.match(/UTC([+-]?)(\d+)(?::(\d+))?/);
+    if (tzMatch) {
+      const sign = tzMatch[1] === '-' ? 1 : -1;
+      const hours = parseInt(tzMatch[2]) || 0;
+      const minutes = parseInt(tzMatch[3]) || 0;
+      deviceConfig.timezone_offset = sign * (hours + minutes / 60);
+    } else {
+      deviceConfig.timezone_offset = 0;
+    }
 
     // Processing settings
     const proc = parse(data.processing_settings);
@@ -2136,6 +2307,18 @@ const saveDevice = async () => {
       // Save device remote config (config + processing + palette)
       const [startH, startM] = deviceConfig.sleep_start_time.split(':').map(Number);
       const [endH, endM] = deviceConfig.sleep_end_time.split(':').map(Number);
+
+      // Convert UTC offset to POSIX timezone format (sign is inverted)
+      const offsetVal = deviceConfig.timezone_offset || 0;
+      let timezone = 'UTC0';
+      if (offsetVal !== 0) {
+        const absOff = Math.abs(offsetVal);
+        const h = Math.floor(absOff);
+        const m = Math.round((absOff - h) * 60);
+        const sign = offsetVal > 0 ? '-' : '+';
+        timezone = m === 0 ? `UTC${sign}${h}` : `UTC${sign}${h}:${String(m).padStart(2, '0')}`;
+      }
+
       await updateDeviceConfig(editingDevice.id, {
         config: {
           auto_rotate: deviceConfig.auto_rotate,
@@ -2147,8 +2330,13 @@ const saveDevice = async () => {
           sleep_schedule_start: startH * 60 + startM,
           sleep_schedule_end: endH * 60 + endM,
           display_orientation: deviceConfig.display_orientation,
+          display_rotation_deg: deviceConfig.display_rotation_deg,
+          timezone: timezone,
+          ntp_server: deviceConfig.ntp_server,
           deep_sleep_enabled: deviceConfig.deep_sleep_enabled,
           ha_url: deviceConfig.ha_url,
+          openai_api_key: deviceConfig.openai_api_key,
+          google_api_key: deviceConfig.google_api_key,
         },
         processing_settings: { ...deviceProcessing },
         color_palette: { ...devicePalette },
@@ -2858,3 +3046,10 @@ const getDeviceFromUA = (ua: string) => {
   return 'Other Device';
 };
 </script>
+
+<style scoped>
+.color-swatch {
+  height: 60px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+}
+</style>
