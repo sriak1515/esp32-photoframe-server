@@ -2346,7 +2346,7 @@ const openAddDeviceDialog = () => {
   Object.assign(editingDevice, {
     id: undefined, name: '', host: '', width: 0, height: 0, orientation: '',
     enable_collage: false,
-    show_date: true, show_photo_date: false, show_weather: true,
+    show_date: false, show_photo_date: false, show_weather: false,
     weather_lat: null, weather_lon: null,
     ai_provider: '', ai_model: '', ai_prompt: '',
     layout: 'photo_overlay', display_mode: 'cover',
@@ -2393,7 +2393,7 @@ const saveDevice = async () => {
   savingDeviceConfig.value = true;
   try {
     if (isAddingDevice.value) {
-      await addDevice({
+      const newDevice = await addDevice({
         host: editingDevice.host!,
         enable_collage: editingDevice.enable_collage!,
         show_date: editingDevice.show_date!,
@@ -2407,7 +2407,15 @@ const saveDevice = async () => {
         calendar_id: editingDevice.calendar_id || '',
         date_format: editingDevice.date_format || '',
       });
-      showMessage('Device added successfully');
+      await loadDevices();
+      showMessage('Device added. Fetched settings from device.');
+      // Re-open in edit mode with fetched config
+      const added = availableDevices.value.find((d: Device) => d.id === newDevice.id);
+      if (added) {
+        savingDeviceConfig.value = false;
+        await editDevice(added);
+        return;
+      }
     } else {
       if (!editingDevice.id) return;
       // Save server-side device fields
