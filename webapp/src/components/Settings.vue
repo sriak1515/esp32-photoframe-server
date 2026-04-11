@@ -2138,7 +2138,8 @@ const syncFromDevice = async () => {
   try {
     await updateDevice(
       editingDevice.id,
-      '', '', 0, 0, '', true,
+      editingDevice.name!, editingDevice.host!,
+      0, 0, '', true,
       editingDevice.enable_collage!,
       editingDevice.show_date!,
       editingDevice.show_photo_date || false,
