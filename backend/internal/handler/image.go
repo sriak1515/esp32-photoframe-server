@@ -278,21 +278,13 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 					ServedAt: time.Now(),
 				})
 			}
-			// Prune old history
-			// Keep last 100 entries for this device
-			// (Keep more in DB than we filter to have a buffer)
-			var count int64
-			h.db.Model(&model.DeviceHistory{}).Where("device_id = ?", devID).Count(&count)
-			if count > 100 {
-				// Delete oldest
-				// SQLite modification with LIMIT is compile-option dependent, subquery is safer
-				h.db.Where("device_id = ? AND id NOT IN (?)", devID,
-					h.db.Model(&model.DeviceHistory{}).Select("id").
-						Where("device_id = ?", devID).
-						Order("served_at desc").
-						Limit(100),
-				).Delete(&model.DeviceHistory{})
-			}
+			// Prune old history — keep only last 50 entries
+			h.db.Where("device_id = ? AND id NOT IN (?)", devID,
+				h.db.Model(&model.DeviceHistory{}).Select("id").
+					Where("device_id = ?", devID).
+					Order("served_at desc").
+					Limit(50),
+			).Delete(&model.DeviceHistory{})
 		}(device.ID, servedImageIDs)
 	}
 
