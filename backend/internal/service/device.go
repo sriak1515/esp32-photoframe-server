@@ -64,7 +64,8 @@ func (s *DeviceService) AddDevice(host string, enableCollage, showDate, showPhot
 	var width, height int
 	var orientation string
 
-	sysInfo, err := photoframe.NewClient(host).FetchSystemInfo()
+	pfClient := photoframe.NewClient(host)
+	sysInfo, err := pfClient.FetchSystemInfo()
 	if err != nil {
 		log.Printf("Could not reach device at %s (may be remote): %v", host, err)
 		// Use defaults for unreachable devices; dimensions will be updated on first image request
@@ -77,7 +78,7 @@ func (s *DeviceService) AddDevice(host string, enableCollage, showDate, showPhot
 		width = sysInfo.Width
 		height = sysInfo.Height
 
-		configRaw, cfgErr := photoframe.NewClient(host).FetchConfig()
+		configRaw, cfgErr := pfClient.FetchConfig()
 		if cfgErr == nil {
 			var parsed struct {
 				DisplayOrientation string `json:"display_orientation"`
@@ -138,8 +139,10 @@ func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height i
 	shouldRefresh := name == "" || width == 0 || height == 0 || orientation == ""
 
 	if shouldRefresh {
+		pfClient := photoframe.NewClient(host)
+
 		// Fetch system info (name, dimensions)
-		sysInfo, err := photoframe.NewClient(host).FetchSystemInfo()
+		sysInfo, err := pfClient.FetchSystemInfo()
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch system info: %w", err)
 		}
@@ -150,7 +153,7 @@ func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height i
 		height = sysInfo.Height
 
 		// Fetch and store full device config (single request)
-		configRaw, err := photoframe.NewClient(host).FetchConfig()
+		configRaw, err := pfClient.FetchConfig()
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch device config: %w", err)
 		}
@@ -165,7 +168,7 @@ func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height i
 		}
 
 		// Fetch and store processing settings
-		procRaw, err := photoframe.NewClient(host).FetchProcessingSettings()
+		procRaw, err := pfClient.FetchProcessingSettings()
 		if err != nil {
 			log.Printf("Failed to fetch processing settings from %s: %v", host, err)
 		} else {
@@ -173,7 +176,7 @@ func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height i
 		}
 
 		// Fetch and store palette
-		paletteRaw, err := photoframe.NewClient(host).FetchPalette()
+		paletteRaw, err := pfClient.FetchPalette()
 		if err != nil {
 			log.Printf("Failed to fetch palette from %s: %v", host, err)
 		} else {

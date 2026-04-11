@@ -79,6 +79,7 @@ var sharedHTTPClient = &http.Client{
 
 type Client struct {
 	host       string
+	resolvedIP string // Cached resolved IP
 	httpClient *http.Client
 }
 
@@ -159,8 +160,14 @@ func (c *Client) Host() string {
 }
 
 func (c *Client) resolveHost(host string) (string, error) {
-	// If it's already an IP, return it
+	// Return cached result
+	if c.resolvedIP != "" {
+		return c.resolvedIP, nil
+	}
+
+	// If it's already an IP, cache and return it
 	if net.ParseIP(host) != nil {
+		c.resolvedIP = host
 		return host, nil
 	}
 
@@ -172,12 +179,14 @@ func (c *Client) resolveHost(host string) (string, error) {
 	// Prefer IPv4
 	for _, ip := range ips {
 		if strings.Contains(ip, ".") {
+			c.resolvedIP = ip
 			return ip, nil
 		}
 	}
 
 	// Fallback to first (likely IPv6)
 	if len(ips) > 0 {
+		c.resolvedIP = ips[0]
 		return ips[0], nil
 	}
 
