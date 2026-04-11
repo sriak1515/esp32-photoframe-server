@@ -1537,7 +1537,7 @@
                                 v-html="
                                   getLayoutPreviewSvg(
                                     opt.value,
-                                    editingDevice.orientation || 'landscape'
+                                    deviceConfig.display_orientation || editingDevice.orientation || 'landscape'
                                   )
                                 "
                               ></div>
@@ -2527,7 +2527,7 @@ const allLayoutOptions = [
 ];
 
 const filteredLayoutOptions = computed(() => {
-  const orientation = editingDevice.orientation || 'landscape';
+  const orientation = deviceConfig.display_orientation || editingDevice.orientation || 'landscape';
   return allLayoutOptions.filter((opt) =>
     opt.orientations.includes(orientation)
   );
@@ -2535,7 +2535,7 @@ const filteredLayoutOptions = computed(() => {
 
 // Auto-select first layout if current layout is not valid for orientation
 watch(
-  () => editingDevice.orientation,
+  () => deviceConfig.display_orientation,
   () => {
     const valid = filteredLayoutOptions.value.map((o) => o.value);
     if (editingDevice.layout && !valid.includes(editingDevice.layout)) {
