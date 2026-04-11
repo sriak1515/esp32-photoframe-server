@@ -1267,6 +1267,24 @@
                             class="mb-2"
                             :disabled="!deviceConfig.auto_rotate"
                           />
+                          <v-select
+                            v-model="deviceConfig.rotation_mode"
+                            :items="[{ title: 'Local Storage', value: 'storage' }, { title: 'URL', value: 'url' }]"
+                            label="Rotation Mode"
+                            variant="outlined"
+                            density="compact"
+                            class="mt-4 mb-2"
+                            :disabled="!deviceConfig.auto_rotate"
+                          />
+                          <v-checkbox
+                            v-if="deviceConfig.rotation_mode === 'url'"
+                            v-model="deviceConfig.save_downloaded_images"
+                            label="Save downloaded images to Downloads album"
+                            color="primary"
+                            hide-details
+                            class="mb-2"
+                            :disabled="!deviceConfig.auto_rotate"
+                          />
                         </div>
 
                         <v-divider class="my-3" />
@@ -1926,6 +1944,7 @@ const deviceConfig = reactive<Record<string, any>>({
   auto_rotate_aligned: true,
   rotation_mode: 'storage',
   image_url: '',
+  save_downloaded_images: true,
   sleep_schedule_enabled: false,
   sleep_start_time: '23:00',
   sleep_end_time: '07:00',
@@ -2055,6 +2074,7 @@ const loadDeviceConfig = async (deviceId: number) => {
       auto_rotate_aligned: cfg.auto_rotate_aligned ?? true,
       rotation_mode: cfg.rotation_mode ?? 'storage',
       image_url: cfg.image_url ?? '',
+      save_downloaded_images: cfg.save_downloaded_images ?? true,
       sleep_schedule_enabled: cfg.sleep_schedule_enabled ?? false,
       display_orientation: cfg.display_orientation ?? deviceConfig.display_orientation,
       display_rotation_deg: cfg.display_rotation_deg ?? 180,
@@ -2313,7 +2333,7 @@ const openAddDeviceDialog = () => {
   });
   Object.assign(deviceConfig, {
     auto_rotate: false, rotate_interval: 3600, auto_rotate_aligned: true,
-    rotation_mode: 'storage', image_url: '',
+    rotation_mode: 'storage', image_url: '', save_downloaded_images: true,
     sleep_schedule_enabled: false, sleep_start_time: '23:00', sleep_end_time: '07:00',
     display_orientation: 'landscape', deep_sleep_enabled: true,
   });
@@ -2412,6 +2432,7 @@ const saveDevice = async () => {
           auto_rotate_aligned: deviceConfig.auto_rotate_aligned,
           rotation_mode: deviceConfig.rotation_mode,
           image_url: deviceConfig.image_url,
+          save_downloaded_images: deviceConfig.save_downloaded_images,
           sleep_schedule_enabled: deviceConfig.sleep_schedule_enabled,
           sleep_schedule_start: startH * 60 + startM,
           sleep_schedule_end: endH * 60 + endM,
