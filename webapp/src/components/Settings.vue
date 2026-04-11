@@ -1345,8 +1345,6 @@
 
                         <v-divider class="my-4" />
 
-                        <v-divider class="my-4" />
-
                         <!-- Display Settings section header -->
                         <div class="text-body-1 font-weight-medium mb-2">Display Settings</div>
                         <div class="ml-10">
