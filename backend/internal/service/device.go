@@ -151,7 +151,7 @@ func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height i
 
 	// Fetch dimensions if requested and changed to enabled (or if forcing a refresh, logic could be more complex but simple for now)
 	// Signal to refresh: name is empty OR width/height is 0 OR orientation is empty
-	shouldRefresh := name == "" || width == 0 || height == 0 || orientation == ""
+	shouldRefresh := name == "" || width == 0 || height == 0 || orientation == "" || device.BoardName == ""
 
 	if shouldRefresh {
 		pfClient := photoframe.NewClient(host)
