@@ -1199,6 +1199,8 @@
                               persistent-hint
                             ></v-text-field>
                           </v-col>
+                        </v-row>
+                        <v-row>
                           <v-col cols="12" md="6">
                             <v-text-field
                               v-model="deviceConfig.ntp_server"
