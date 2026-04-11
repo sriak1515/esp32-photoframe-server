@@ -1128,7 +1128,7 @@
                     <v-tab value="ai">AI Generation</v-tab>
                     <v-tab value="palette">Palette</v-tab>
                   </v-tabs>
-                  <v-card-text :style="isAddingDevice ? '' : 'height: 460px; overflow-y: auto'">
+                  <v-card-text :style="isAddingDevice ? '' : 'height: 455px; overflow-y: auto'">
                     <!-- Add Device: just host input -->
                     <div v-if="isAddingDevice" class="mt-2">
                       <v-text-field
@@ -1519,12 +1519,9 @@
                           <v-col cols="12" md="4">
                             <v-select
                               v-model="deviceProcessing.ditherAlgorithm"
-                              :items="[
-                                { title: 'Floyd-Steinberg', value: 'floyd-steinberg' },
-                                { title: 'Stucki', value: 'stucki' },
-                                { title: 'Burkes', value: 'burkes' },
-                                { title: 'Sierra', value: 'sierra' },
-                              ]"
+                              :items="ditherOptions"
+                              item-title="title"
+                              item-value="value"
                               label="Dithering Algorithm"
                               variant="outlined"
                               density="compact"
@@ -1995,43 +1992,20 @@ const deviceProcessing = reactive({
   compressDynamicRange: true,
 });
 
-// Processing presets (hardcoded from epaper-image-convert presets.js)
+// Processing presets from epaper-image-convert library
+import { getPresetOptions, getPreset, getDitherOptions } from '@aitjcize/epaper-image-convert';
+
 const processingPreset = ref('custom');
 const processingPresetOptions = [
-  { value: 'balanced', title: 'Balanced (Default)' },
-  { value: 'dynamic', title: 'Dynamic' },
-  { value: 'vivid', title: 'Vivid' },
-  { value: 'soft', title: 'Soft' },
-  { value: 'grayscale', title: 'Grayscale' },
+  ...getPresetOptions(),
   { value: 'custom', title: 'Custom' },
 ];
-const processingPresets: Record<string, Record<string, any>> = {
-  balanced: {
-    exposure: 1.0, saturation: 1.0, toneMode: 'contrast', contrast: 1.0,
-    colorMethod: 'rgb', ditherAlgorithm: 'floyd-steinberg', compressDynamicRange: true,
-    strength: 0.9, shadowBoost: 0.0, highlightCompress: 1.5, midpoint: 0.5,
-  },
-  dynamic: {
-    exposure: 1.0, saturation: 1.3, toneMode: 'scurve', contrast: 1.0,
-    strength: 0.9, shadowBoost: 0.0, highlightCompress: 1.5, midpoint: 0.5,
-    colorMethod: 'rgb', ditherAlgorithm: 'floyd-steinberg', compressDynamicRange: false,
-  },
-  vivid: {
-    exposure: 1.1, saturation: 1.6, toneMode: 'scurve', contrast: 1.0,
-    strength: 0.7, shadowBoost: 0.1, highlightCompress: 1.3, midpoint: 0.5,
-    colorMethod: 'rgb', ditherAlgorithm: 'floyd-steinberg', compressDynamicRange: false,
-  },
-  soft: {
-    exposure: 1.0, saturation: 1.1, toneMode: 'contrast', contrast: 0.9,
-    colorMethod: 'rgb', ditherAlgorithm: 'stucki', compressDynamicRange: true,
-    strength: 0.9, shadowBoost: 0.0, highlightCompress: 1.5, midpoint: 0.5,
-  },
-  grayscale: {
-    exposure: 1.0, saturation: 0.0, toneMode: 'scurve', contrast: 1.0,
-    strength: 0.8, shadowBoost: 0.1, highlightCompress: 1.4, midpoint: 0.5,
-    colorMethod: 'lab', ditherAlgorithm: 'floyd-steinberg', compressDynamicRange: true,
-  },
-};
+const processingPresets: Record<string, Record<string, any>> = {};
+for (const opt of getPresetOptions()) {
+  const p = getPreset(opt.value);
+  if (p) processingPresets[opt.value] = p;
+}
+const ditherOptions = getDitherOptions();
 
 const applyProcessingPreset = (name: string) => {
   const preset = processingPresets[name];
@@ -2042,17 +2016,19 @@ const applyProcessingPreset = (name: string) => {
 };
 
 // Detect current preset on load
+// Match preset detection logic from device webapp: only compare keys present in the preset
+const presetKeys = [
+  'exposure', 'saturation', 'toneMode', 'contrast', 'strength',
+  'shadowBoost', 'highlightCompress', 'midpoint', 'colorMethod',
+  'ditherAlgorithm', 'compressDynamicRange',
+];
+
 const detectProcessingPreset = () => {
-  const keys = ['exposure', 'saturation', 'toneMode', 'contrast', 'colorMethod',
-    'ditherAlgorithm', 'compressDynamicRange', 'strength', 'shadowBoost',
-    'highlightCompress', 'midpoint'] as const;
   for (const [name, preset] of Object.entries(processingPresets)) {
-    const matches = keys.every((k) => {
-      const pv = preset[k];
+    const matches = presetKeys.every((k) => {
+      if (!(k in preset)) return true; // Skip keys not in this preset
+      const pv = (preset as any)[k];
       const dv = (deviceProcessing as any)[k];
-      if (typeof pv === 'number' && typeof dv === 'number') {
-        return Math.abs(pv - dv) < 0.001;
-      }
       return pv === dv;
     });
     if (matches) {

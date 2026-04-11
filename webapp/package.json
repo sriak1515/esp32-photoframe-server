@@ -10,6 +10,7 @@
     "format": "prettier --write ."
   },
   "dependencies": {
+    "@aitjcize/epaper-image-convert": "^0.1.14",
     "@heroicons/vue": "^2.1.1",
     "@mdi/font": "^7.4.47",
     "axios": "^1.6.2",
