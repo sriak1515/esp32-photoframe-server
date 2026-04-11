@@ -883,7 +883,7 @@ func (h *ImageHandler) fetchRandomURLProxy(deviceID *uint) (image.Image, uint, e
 		return nil, 0, err
 	}
 	if urlSource.URL == "" {
-		return nil, 0, fmt.Errorf("fetched empty URL from source ID %d", urlSource.ID)
+		return nil, 0, gorm.ErrRecordNotFound
 	}
 	return h.fetchURLPhoto(urlSource.URL)
 }
