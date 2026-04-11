@@ -2080,6 +2080,35 @@ const devicePalette = reactive<Record<string, { r: number; g: number; b: number 
   green: { r: 39, g: 102, b: 60 },
 });
 
+// Auto-update mDNS hostname when device name changes
+// Matches firmware's sanitize_hostname: lowercase, non-alnum → hyphen, no leading/trailing/consecutive hyphens
+function deviceNameToHostname(name: string): string {
+  let result = '';
+  let lastWasHyphen = false;
+  for (const c of name) {
+    if (/[a-zA-Z0-9]/.test(c)) {
+      result += c.toLowerCase();
+      lastWasHyphen = false;
+    } else if (!lastWasHyphen && result.length > 0) {
+      result += '-';
+      lastWasHyphen = true;
+    }
+  }
+  // Remove trailing hyphen
+  if (result.endsWith('-')) result = result.slice(0, -1);
+  return result || 'photoframe';
+}
+
+watch(
+  () => editingDevice.name,
+  (newName) => {
+    // Only auto-update if current host is an mDNS name
+    if (!editingDevice.host?.endsWith('.local')) return;
+    if (!newName) return;
+    editingDevice.host = deviceNameToHostname(newName) + '.local';
+  }
+);
+
 const orientationOptions = computed(() => {
   const w = editingDevice.width || 800;
   const h = editingDevice.height || 480;
