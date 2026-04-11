@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -79,9 +80,14 @@ func (s *DeviceService) AddDevice(host string, enableCollage, showDate, showPhot
 		width = sysInfo.Width
 		height = sysInfo.Height
 
-		config, cfgErr := s.pfClient.FetchDeviceConfig(host)
+		configRaw, cfgErr := s.pfClient.FetchConfig(host)
 		if cfgErr == nil {
-			orientation = config.DisplayOrientation
+			var parsed struct {
+				DisplayOrientation string `json:"display_orientation"`
+			}
+			if json.Unmarshal([]byte(configRaw), &parsed) == nil && parsed.DisplayOrientation != "" {
+				orientation = parsed.DisplayOrientation
+			}
 		}
 	}
 
@@ -146,21 +152,23 @@ func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height i
 		width = sysInfo.Width
 		height = sysInfo.Height
 
-		// Fetch and store full device config
-		configRaw, err := s.pfClient.FetchDeviceConfigRaw(host)
+		// Fetch and store full device config (single request)
+		configRaw, err := s.pfClient.FetchConfig(host)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch device config: %w", err)
 		}
 		device.DeviceConfig = configRaw
 
-		// Parse orientation from config
-		config, _ := s.pfClient.FetchDeviceConfig(host)
-		if config != nil && config.DisplayOrientation != "" {
-			orientation = config.DisplayOrientation
+		// Parse orientation from the raw config JSON
+		var parsedConfig struct {
+			DisplayOrientation string `json:"display_orientation"`
+		}
+		if json.Unmarshal([]byte(configRaw), &parsedConfig) == nil && parsedConfig.DisplayOrientation != "" {
+			orientation = parsedConfig.DisplayOrientation
 		}
 
 		// Fetch and store processing settings
-		procRaw, err := s.pfClient.FetchProcessingSettingsRaw(host)
+		procRaw, err := s.pfClient.FetchProcessingSettings(host)
 		if err != nil {
 			log.Printf("Failed to fetch processing settings from %s: %v", host, err)
 		} else {
@@ -168,7 +176,7 @@ func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height i
 		}
 
 		// Fetch and store palette
-		paletteRaw, err := s.pfClient.FetchPaletteRaw(host)
+		paletteRaw, err := s.pfClient.FetchPalette(host)
 		if err != nil {
 			log.Printf("Failed to fetch palette from %s: %v", host, err)
 		} else {
@@ -243,14 +251,6 @@ func (s *DeviceService) ConfigureDevice(deviceID uint, config map[string]interfa
 		return errors.New("device not found")
 	}
 	return s.pfClient.PushConfig(device.Host, config)
-}
-
-func (s *DeviceService) GetDeviceConfig(deviceID uint) (*photoframe.DeviceConfig, error) {
-	var device model.Device
-	if err := s.db.First(&device, deviceID).Error; err != nil {
-		return nil, errors.New("device not found")
-	}
-	return s.pfClient.FetchDeviceConfig(device.Host)
 }
 
 // PushToHost processes an image file and pushes it to a target host

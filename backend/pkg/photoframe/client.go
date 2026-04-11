@@ -86,7 +86,7 @@ func NewClient() *Client {
 	return &Client{
 		httpClient: &http.Client{
 			Transport: transport,
-			Timeout:   120 * time.Second,
+			Timeout:   10 * time.Second,
 		},
 	}
 }
@@ -265,75 +265,8 @@ type Palette struct {
 	Green  PaletteColor `json:"green"`
 }
 
-func (c *Client) FetchProcessingSettings(host string) (*ProcessingSettings, error) {
-	ip, err := c.resolveHost(host)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve device %s: %w", host, err)
-	}
-
-	url := fmt.Sprintf("http://%s/api/settings/processing", ip)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Host = host
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("device returned status: %d", resp.StatusCode)
-	}
-
-	var settings ProcessingSettings
-	if err := json.NewDecoder(resp.Body).Decode(&settings); err != nil {
-		return nil, fmt.Errorf("failed to decode settings: %w", err)
-	}
-
-	return &settings, nil
-}
-
-type DeviceConfig struct {
-	DisplayOrientation string `json:"display_orientation"`
-	AccessToken        string `json:"access_token"`
-}
-
-func (c *Client) FetchDeviceConfig(host string) (*DeviceConfig, error) {
-	ip, err := c.resolveHost(host)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve device %s: %w", host, err)
-	}
-
-	url := fmt.Sprintf("http://%s/api/config", ip)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Host = host
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("device returned status: %d", resp.StatusCode)
-	}
-
-	var config DeviceConfig
-	if err := json.NewDecoder(resp.Body).Decode(&config); err != nil {
-		return nil, fmt.Errorf("failed to decode config: %w", err)
-	}
-
-	return &config, nil
-}
-
-// FetchDeviceConfigRaw returns the full device config as a raw JSON string.
-func (c *Client) FetchDeviceConfigRaw(host string) (string, error) {
+// FetchConfig returns the full device config as a raw JSON string.
+func (c *Client) FetchConfig(host string) (string, error) {
 	ip, err := c.resolveHost(host)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve device %s: %w", host, err)
@@ -364,8 +297,8 @@ func (c *Client) FetchDeviceConfigRaw(host string) (string, error) {
 	return string(body), nil
 }
 
-// FetchProcessingSettingsRaw returns the device processing settings as a raw JSON string.
-func (c *Client) FetchProcessingSettingsRaw(host string) (string, error) {
+// FetchProcessingSettings returns the device processing settings as a raw JSON string.
+func (c *Client) FetchProcessingSettings(host string) (string, error) {
 	ip, err := c.resolveHost(host)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve device %s: %w", host, err)
@@ -396,8 +329,8 @@ func (c *Client) FetchProcessingSettingsRaw(host string) (string, error) {
 	return string(body), nil
 }
 
-// FetchPaletteRaw returns the device color palette as a raw JSON string.
-func (c *Client) FetchPaletteRaw(host string) (string, error) {
+// FetchPalette returns the device color palette as a raw JSON string.
+func (c *Client) FetchPalette(host string) (string, error) {
 	ip, err := c.resolveHost(host)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve device %s: %w", host, err)
@@ -461,33 +394,4 @@ func (c *Client) PushConfig(host string, config map[string]interface{}) error {
 	return nil
 }
 
-func (c *Client) FetchPalette(host string) (*Palette, error) {
-	ip, err := c.resolveHost(host)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve device %s: %w", host, err)
-	}
 
-	url := fmt.Sprintf("http://%s/api/settings/palette", ip)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Host = host
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("device returned status: %d", resp.StatusCode)
-	}
-
-	var palette Palette
-	if err := json.NewDecoder(resp.Body).Decode(&palette); err != nil {
-		return nil, fmt.Errorf("failed to decode palette: %w", err)
-	}
-
-	return &palette, nil
-}
