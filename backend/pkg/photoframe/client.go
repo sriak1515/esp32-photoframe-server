@@ -60,48 +60,45 @@ func parseVersion(v string) [3]int {
 	return parts
 }
 
-type Client struct {
-	httpClient *http.Client
-}
-
-func NewClient() *Client {
-	// Custom dialer to force system resolver for mDNS (.local)
-	dialer := &net.Dialer{
-		Timeout:   5 * time.Second,
-		KeepAlive: 30 * time.Second,
-		Resolver: &net.Resolver{
-			PreferGo: false,
-		},
-	}
-
-	transport := &http.Transport{
-		DialContext:           dialer.DialContext,
+// Shared HTTP client with mDNS-compatible resolver (reused across all Client instances)
+var sharedHTTPClient = &http.Client{
+	Transport: &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   5 * time.Second,
+			KeepAlive: 30 * time.Second,
+			Resolver:  &net.Resolver{PreferGo: false},
+		}).DialContext,
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
-	}
+	},
+	Timeout: 10 * time.Second,
+}
 
+type Client struct {
+	host       string
+	httpClient *http.Client
+}
+
+func NewClient(host string) *Client {
 	return &Client{
-		httpClient: &http.Client{
-			Transport: transport,
-			Timeout:   10 * time.Second,
-		},
+		host:       host,
+		httpClient: sharedHTTPClient,
 	}
 }
 
 // PushImage pushes an EPDGZ image and an optional thumbnail to the device.
-func (c *Client) PushImage(host string, imageBytes []byte, thumbBytes []byte) error {
-	// Resolve Host to IP manually to bypass HTTP client resolver issues with mDNS
-	ip, err := c.resolveHost(host)
+func (c *Client) PushImage(imageBytes []byte, thumbBytes []byte) error {
+	ip, err := c.resolveHost(c.host)
 	if err != nil {
-		return fmt.Errorf("failed to resolve device %s: %w", host, err)
+		return fmt.Errorf("failed to resolve device %s: %w", c.host, err)
 	}
 
 	// Quick reachability check on IP
 	if err := c.checkReachability(ip); err != nil {
-		return fmt.Errorf("device %s (%s) is not reachable: %w", host, ip, err)
+		return fmt.Errorf("device %s (%s) is not reachable: %w", c.host, ip, err)
 	}
 
 	// Prepare multipart request
@@ -141,7 +138,7 @@ func (c *Client) PushImage(host string, imageBytes []byte, thumbBytes []byte) er
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	// Set Host header just in case, though usually not needed for direct IP
-	req.Host = host
+	req.Host = c.host
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -154,6 +151,11 @@ func (c *Client) PushImage(host string, imageBytes []byte, thumbBytes []byte) er
 	}
 
 	return nil
+}
+
+// Host returns the client's target host.
+func (c *Client) Host() string {
+	return c.host
 }
 
 func (c *Client) resolveHost(host string) (string, error) {
@@ -204,10 +206,10 @@ type SystemInfo struct {
 	Version    string `json:"version"`
 }
 
-func (c *Client) FetchSystemInfo(host string) (*SystemInfo, error) {
-	ip, err := c.resolveHost(host)
+func (c *Client) FetchSystemInfo() (*SystemInfo, error) {
+	ip, err := c.resolveHost(c.host)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve device %s: %w", host, err)
+		return nil, fmt.Errorf("failed to resolve device %s: %w", c.host, err)
 	}
 
 	url := fmt.Sprintf("http://%s/api/system-info", ip)
@@ -215,7 +217,7 @@ func (c *Client) FetchSystemInfo(host string) (*SystemInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Host = host // Set Host header
+	req.Host = c.host
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -266,10 +268,10 @@ type Palette struct {
 }
 
 // FetchConfig returns the full device config as a raw JSON string.
-func (c *Client) FetchConfig(host string) (string, error) {
-	ip, err := c.resolveHost(host)
+func (c *Client) FetchConfig() (string, error) {
+	ip, err := c.resolveHost(c.host)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve device %s: %w", host, err)
+		return "", fmt.Errorf("failed to resolve device %s: %w", c.host, err)
 	}
 
 	url := fmt.Sprintf("http://%s/api/config", ip)
@@ -277,7 +279,7 @@ func (c *Client) FetchConfig(host string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req.Host = host
+	req.Host = c.host
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -298,10 +300,10 @@ func (c *Client) FetchConfig(host string) (string, error) {
 }
 
 // FetchProcessingSettings returns the device processing settings as a raw JSON string.
-func (c *Client) FetchProcessingSettings(host string) (string, error) {
-	ip, err := c.resolveHost(host)
+func (c *Client) FetchProcessingSettings() (string, error) {
+	ip, err := c.resolveHost(c.host)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve device %s: %w", host, err)
+		return "", fmt.Errorf("failed to resolve device %s: %w", c.host, err)
 	}
 
 	url := fmt.Sprintf("http://%s/api/settings/processing", ip)
@@ -309,7 +311,7 @@ func (c *Client) FetchProcessingSettings(host string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req.Host = host
+	req.Host = c.host
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -330,10 +332,10 @@ func (c *Client) FetchProcessingSettings(host string) (string, error) {
 }
 
 // FetchPalette returns the device color palette as a raw JSON string.
-func (c *Client) FetchPalette(host string) (string, error) {
-	ip, err := c.resolveHost(host)
+func (c *Client) FetchPalette() (string, error) {
+	ip, err := c.resolveHost(c.host)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve device %s: %w", host, err)
+		return "", fmt.Errorf("failed to resolve device %s: %w", c.host, err)
 	}
 
 	url := fmt.Sprintf("http://%s/api/settings/palette", ip)
@@ -341,7 +343,7 @@ func (c *Client) FetchPalette(host string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req.Host = host
+	req.Host = c.host
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -361,10 +363,10 @@ func (c *Client) FetchPalette(host string) (string, error) {
 	return string(body), nil
 }
 
-func (c *Client) PushConfig(host string, config map[string]interface{}) error {
-	ip, err := c.resolveHost(host)
+func (c *Client) PushConfig(config map[string]interface{}) error {
+	ip, err := c.resolveHost(c.host)
 	if err != nil {
-		return fmt.Errorf("failed to resolve device %s: %w", host, err)
+		return fmt.Errorf("failed to resolve device %s: %w", c.host, err)
 	}
 
 	url := fmt.Sprintf("http://%s/api/config", ip)
@@ -378,7 +380,7 @@ func (c *Client) PushConfig(host string, config map[string]interface{}) error {
 	if err != nil {
 		return err
 	}
-	req.Host = host
+	req.Host = c.host
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)

@@ -12,7 +12,6 @@ import (
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/service"
 	"github.com/aitjcize/esp32-photoframe-server/backend/pkg/gcalendar"
 	"github.com/aitjcize/esp32-photoframe-server/backend/pkg/googlephotos"
-	"github.com/aitjcize/esp32-photoframe-server/backend/pkg/photoframe"
 	"github.com/aitjcize/esp32-photoframe-server/backend/pkg/weather"
 	"github.com/labstack/echo/v4"
 	echoMiddleware "github.com/labstack/echo/v4/middleware"
@@ -188,9 +187,6 @@ func main() {
 
 	pickerService := service.NewPickerService(googleClient, database, dataDir)
 
-	// Initialize PhotoFrame Client
-	photoframeClient := photoframe.NewClient()
-
 	// Initialize Device Service
 	deviceService := service.NewDeviceService(service.DeviceServiceDeps{
 		DB:             database,
@@ -200,7 +196,6 @@ func main() {
 		Weather:        weatherClient,
 		Calendar:       calendarClient,
 		CalendarGoogle: googleCalendarClient,
-		PFClient:       photoframeClient,
 	})
 	deviceHandler := handler.NewDeviceHandler(deviceService, synologyService, immichService, authService, settingsService, database)
 

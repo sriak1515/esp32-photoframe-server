@@ -1128,7 +1128,7 @@
                     <v-tab value="ai">AI Generation</v-tab>
                     <v-tab value="palette">Palette</v-tab>
                   </v-tabs>
-                  <v-card-text :style="isAddingDevice ? '' : 'min-height: 400px'">
+                  <v-card-text :style="isAddingDevice ? '' : 'height: 550px; overflow-y: auto'">
                     <!-- Add Device: just host input -->
                     <div v-if="isAddingDevice" class="mt-2">
                       <v-text-field

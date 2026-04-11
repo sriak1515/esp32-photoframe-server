@@ -24,7 +24,6 @@ type DeviceServiceDeps struct {
 	Weather        *weather.Client
 	Calendar       *gcalendar.Client
 	CalendarGoogle *googlephotos.Client
-	PFClient       *photoframe.Client
 }
 
 type DeviceService struct {
@@ -35,7 +34,6 @@ type DeviceService struct {
 	weather        *weather.Client
 	calendar       *gcalendar.Client
 	calendarGoogle *googlephotos.Client
-	pfClient       *photoframe.Client
 }
 
 func NewDeviceService(deps DeviceServiceDeps) *DeviceService {
@@ -47,7 +45,6 @@ func NewDeviceService(deps DeviceServiceDeps) *DeviceService {
 		weather:        deps.Weather,
 		calendar:       deps.Calendar,
 		calendarGoogle: deps.CalendarGoogle,
-		pfClient:       deps.PFClient,
 	}
 }
 
@@ -67,7 +64,7 @@ func (s *DeviceService) AddDevice(host string, enableCollage, showDate, showPhot
 	var width, height int
 	var orientation string
 
-	sysInfo, err := s.pfClient.FetchSystemInfo(host)
+	sysInfo, err := photoframe.NewClient(host).FetchSystemInfo()
 	if err != nil {
 		log.Printf("Could not reach device at %s (may be remote): %v", host, err)
 		// Use defaults for unreachable devices; dimensions will be updated on first image request
@@ -80,7 +77,7 @@ func (s *DeviceService) AddDevice(host string, enableCollage, showDate, showPhot
 		width = sysInfo.Width
 		height = sysInfo.Height
 
-		configRaw, cfgErr := s.pfClient.FetchConfig(host)
+		configRaw, cfgErr := photoframe.NewClient(host).FetchConfig()
 		if cfgErr == nil {
 			var parsed struct {
 				DisplayOrientation string `json:"display_orientation"`
@@ -142,7 +139,7 @@ func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height i
 
 	if shouldRefresh {
 		// Fetch system info (name, dimensions)
-		sysInfo, err := s.pfClient.FetchSystemInfo(host)
+		sysInfo, err := photoframe.NewClient(host).FetchSystemInfo()
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch system info: %w", err)
 		}
@@ -153,7 +150,7 @@ func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height i
 		height = sysInfo.Height
 
 		// Fetch and store full device config (single request)
-		configRaw, err := s.pfClient.FetchConfig(host)
+		configRaw, err := photoframe.NewClient(host).FetchConfig()
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch device config: %w", err)
 		}
@@ -168,7 +165,7 @@ func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height i
 		}
 
 		// Fetch and store processing settings
-		procRaw, err := s.pfClient.FetchProcessingSettings(host)
+		procRaw, err := photoframe.NewClient(host).FetchProcessingSettings()
 		if err != nil {
 			log.Printf("Failed to fetch processing settings from %s: %v", host, err)
 		} else {
@@ -176,7 +173,7 @@ func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height i
 		}
 
 		// Fetch and store palette
-		paletteRaw, err := s.pfClient.FetchPalette(host)
+		paletteRaw, err := photoframe.NewClient(host).FetchPalette()
 		if err != nil {
 			log.Printf("Failed to fetch palette from %s: %v", host, err)
 		} else {
@@ -250,7 +247,7 @@ func (s *DeviceService) ConfigureDevice(deviceID uint, config map[string]interfa
 	if err := s.db.First(&device, deviceID).Error; err != nil {
 		return errors.New("device not found")
 	}
-	return s.pfClient.PushConfig(device.Host, config)
+	return photoframe.NewClient(device.Host).PushConfig(config)
 }
 
 // PushToHost processes an image file and pushes it to a target host
@@ -264,7 +261,8 @@ func (s *DeviceService) PushToHost(device *model.Device, imagePath string, extra
 	}
 
 	// Always fetch system info for firmware version check
-	sysInfo, sysInfoErr := s.pfClient.FetchSystemInfo(device.Host)
+	pfClient := photoframe.NewClient(device.Host)
+	sysInfo, sysInfoErr := pfClient.FetchSystemInfo()
 	if sysInfoErr != nil {
 		log.Printf("Failed to fetch system info for %s: %v", device.Name, sysInfoErr)
 	}
@@ -392,7 +390,7 @@ func (s *DeviceService) PushToHost(device *model.Device, imagePath string, extra
 		return fmt.Errorf("processing failed: %w", err)
 	}
 
-	if err := s.pfClient.PushImage(device.Host, processedData, thumbData); err != nil {
+	if err := pfClient.PushImage(processedData, thumbData); err != nil {
 		return fmt.Errorf("failed to push to device: %w", err)
 	}
 
