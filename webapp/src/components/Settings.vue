@@ -1113,6 +1113,14 @@
                         @click="refreshDeviceParams(device)"
                       ></v-btn>
                       <v-btn
+                        color="teal"
+                        variant="text"
+                        size="small"
+                        icon="mdi-cog-sync"
+                        title="Remote Device Config"
+                        @click="openDeviceConfigDialog(device)"
+                      ></v-btn>
+                      <v-btn
                         color="secondary"
                         variant="text"
                         size="small"
@@ -1511,6 +1519,150 @@
                 </v-card>
               </v-dialog>
 
+              <!-- Device Config Dialog -->
+              <v-dialog v-model="showDeviceConfigDialog" max-width="600px" scrollable>
+                <v-card>
+                  <v-card-title class="d-flex align-center">
+                    <v-icon class="mr-2">mdi-cog-sync</v-icon>
+                    Remote Config — {{ deviceConfigTarget?.name }}
+                  </v-card-title>
+                  <v-card-text>
+                    <v-alert
+                      type="info"
+                      variant="tonal"
+                      class="mb-4"
+                      density="compact"
+                    >
+                      Changes are pushed to the device on its next image fetch.
+                    </v-alert>
+
+                    <v-expansion-panels v-model="deviceConfigPanels" multiple variant="accordion">
+                      <!-- Auto Rotate -->
+                      <v-expansion-panel value="auto_rotate">
+                        <v-expansion-panel-title>Auto Rotate</v-expansion-panel-title>
+                        <v-expansion-panel-text>
+                          <v-switch
+                            v-model="deviceConfig.auto_rotate"
+                            label="Enable Auto Rotate"
+                            color="primary"
+                            hide-details
+                            class="mb-2"
+                          />
+                          <v-select
+                            v-model="deviceConfig.rotate_interval"
+                            :items="rotateIntervalOptions"
+                            label="Rotation Interval"
+                            variant="outlined"
+                            density="compact"
+                            hide-details
+                            class="mb-2"
+                          />
+                          <v-switch
+                            v-model="deviceConfig.auto_rotate_aligned"
+                            label="Align rotation to clock boundaries"
+                            color="primary"
+                            hide-details
+                            class="mb-2"
+                          />
+                          <v-select
+                            v-model="deviceConfig.rotation_mode"
+                            :items="[{ title: 'Local Storage', value: 'storage' }, { title: 'URL', value: 'url' }]"
+                            label="Rotation Mode"
+                            variant="outlined"
+                            density="compact"
+                            hide-details
+                            class="mb-2"
+                          />
+                          <v-text-field
+                            v-if="deviceConfig.rotation_mode === 'url'"
+                            v-model="deviceConfig.image_url"
+                            label="Image URL"
+                            variant="outlined"
+                            density="compact"
+                            hide-details
+                            class="mb-2"
+                          />
+                        </v-expansion-panel-text>
+                      </v-expansion-panel>
+
+                      <!-- Sleep Schedule -->
+                      <v-expansion-panel value="sleep">
+                        <v-expansion-panel-title>Sleep Schedule</v-expansion-panel-title>
+                        <v-expansion-panel-text>
+                          <v-switch
+                            v-model="deviceConfig.sleep_schedule_enabled"
+                            label="Enable Sleep Schedule"
+                            color="primary"
+                            hide-details
+                            class="mb-2"
+                          />
+                          <v-row v-if="deviceConfig.sleep_schedule_enabled">
+                            <v-col cols="6">
+                              <v-text-field
+                                v-model="deviceConfig.sleep_start_time"
+                                label="Sleep Start"
+                                type="time"
+                                variant="outlined"
+                                density="compact"
+                                hide-details
+                              />
+                            </v-col>
+                            <v-col cols="6">
+                              <v-text-field
+                                v-model="deviceConfig.sleep_end_time"
+                                label="Wake Up"
+                                type="time"
+                                variant="outlined"
+                                density="compact"
+                                hide-details
+                              />
+                            </v-col>
+                          </v-row>
+                        </v-expansion-panel-text>
+                      </v-expansion-panel>
+
+                      <!-- Display -->
+                      <v-expansion-panel value="display">
+                        <v-expansion-panel-title>Display</v-expansion-panel-title>
+                        <v-expansion-panel-text>
+                          <v-select
+                            v-model="deviceConfig.display_orientation"
+                            :items="[{ title: 'Landscape', value: 'landscape' }, { title: 'Portrait', value: 'portrait' }]"
+                            label="Display Orientation"
+                            variant="outlined"
+                            density="compact"
+                            hide-details
+                            class="mb-2"
+                          />
+                        </v-expansion-panel-text>
+                      </v-expansion-panel>
+
+                      <!-- Power -->
+                      <v-expansion-panel value="power">
+                        <v-expansion-panel-title>Power</v-expansion-panel-title>
+                        <v-expansion-panel-text>
+                          <v-switch
+                            v-model="deviceConfig.deep_sleep_enabled"
+                            label="Enable Deep Sleep"
+                            color="primary"
+                            hide-details
+                          />
+                        </v-expansion-panel-text>
+                      </v-expansion-panel>
+                    </v-expansion-panels>
+                  </v-card-text>
+                  <v-card-actions>
+                    <v-spacer></v-spacer>
+                    <v-btn @click="showDeviceConfigDialog = false">Cancel</v-btn>
+                    <v-btn
+                      color="primary"
+                      @click="saveDeviceConfig"
+                      :loading="savingDeviceConfig"
+                    >Save</v-btn>
+                  </v-card-actions>
+                </v-card>
+              </v-dialog>
+
               <!-- Bind Source Dialog -->
               <v-dialog v-model="showBindSourceDialog" max-width="500px">
                 <v-card>
@@ -1594,6 +1746,8 @@ import {
   listURLSources,
   deleteURLSource,
   configureDeviceSource,
+  getDeviceConfig,
+  updateDeviceConfig,
   updateAccount,
   listSessions,
   revokeSession,
@@ -1756,6 +1910,99 @@ const loadCalendars = async () => {
 // Edit Device State (declared here because computed/watch below reference editingDevice)
 const showEditDeviceDialog = ref(false);
 const editingDevice = reactive<Partial<Device>>({});
+
+// Device Config Dialog State
+const showDeviceConfigDialog = ref(false);
+const deviceConfigTarget = ref<Device | null>(null);
+const deviceConfigPanels = ref<string[]>(['auto_rotate']);
+const savingDeviceConfig = ref(false);
+const deviceConfig = reactive<Record<string, any>>({
+  auto_rotate: false,
+  rotate_interval: 3600,
+  auto_rotate_aligned: true,
+  rotation_mode: 'storage',
+  image_url: '',
+  sleep_schedule_enabled: false,
+  sleep_start_time: '23:00',
+  sleep_end_time: '07:00',
+  display_orientation: 'landscape',
+  deep_sleep_enabled: true,
+});
+
+const rotateIntervalOptions = [
+  { title: '5 minutes', value: 300 },
+  { title: '15 minutes', value: 900 },
+  { title: '30 minutes', value: 1800 },
+  { title: '1 hour', value: 3600 },
+  { title: '2 hours', value: 7200 },
+  { title: '4 hours', value: 14400 },
+  { title: '6 hours', value: 21600 },
+  { title: '12 hours', value: 43200 },
+  { title: '24 hours', value: 86400 },
+];
+
+const openDeviceConfigDialog = async (device: Device) => {
+  deviceConfigTarget.value = device;
+  deviceConfigPanels.value = ['auto_rotate'];
+  showDeviceConfigDialog.value = true;
+
+  try {
+    const data = await getDeviceConfig(device.id);
+    const cfg = data.config ? (typeof data.config === 'string' ? JSON.parse(data.config) : data.config) : {};
+
+    // Merge loaded config with defaults
+    Object.assign(deviceConfig, {
+      auto_rotate: cfg.auto_rotate ?? false,
+      rotate_interval: cfg.rotate_interval ?? 3600,
+      auto_rotate_aligned: cfg.auto_rotate_aligned ?? true,
+      rotation_mode: cfg.rotation_mode ?? 'storage',
+      image_url: cfg.image_url ?? '',
+      sleep_schedule_enabled: cfg.sleep_schedule_enabled ?? false,
+      display_orientation: cfg.display_orientation ?? 'landscape',
+      deep_sleep_enabled: cfg.deep_sleep_enabled ?? true,
+    });
+
+    // Convert sleep schedule minutes to HH:MM
+    const startMin = cfg.sleep_schedule_start ?? 1380;
+    deviceConfig.sleep_start_time = `${String(Math.floor(startMin / 60)).padStart(2, '0')}:${String(startMin % 60).padStart(2, '0')}`;
+    const endMin = cfg.sleep_schedule_end ?? 420;
+    deviceConfig.sleep_end_time = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+  } catch {
+    // No config saved yet, use defaults
+  }
+};
+
+const saveDeviceConfig = async () => {
+  if (!deviceConfigTarget.value) return;
+  savingDeviceConfig.value = true;
+
+  try {
+    // Convert HH:MM back to minutes
+    const [startH, startM] = deviceConfig.sleep_start_time.split(':').map(Number);
+    const [endH, endM] = deviceConfig.sleep_end_time.split(':').map(Number);
+
+    const cfg: Record<string, any> = {
+      auto_rotate: deviceConfig.auto_rotate,
+      rotate_interval: deviceConfig.rotate_interval,
+      auto_rotate_aligned: deviceConfig.auto_rotate_aligned,
+      rotation_mode: deviceConfig.rotation_mode,
+      image_url: deviceConfig.image_url,
+      sleep_schedule_enabled: deviceConfig.sleep_schedule_enabled,
+      sleep_schedule_start: startH * 60 + startM,
+      sleep_schedule_end: endH * 60 + endM,
+      display_orientation: deviceConfig.display_orientation,
+      deep_sleep_enabled: deviceConfig.deep_sleep_enabled,
+    };
+
+    await updateDeviceConfig(deviceConfigTarget.value.id, { config: cfg });
+    showDeviceConfigDialog.value = false;
+    showMessage('Device config saved. Will sync on next image fetch.');
+  } catch (e: any) {
+    showMessage(e?.response?.data?.error || 'Failed to save config', true);
+  } finally {
+    savingDeviceConfig.value = false;
+  }
+};
 
 const allLayoutOptions = [
   {

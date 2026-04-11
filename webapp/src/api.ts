@@ -169,6 +169,19 @@ export const configureDeviceSource = async (id: number, source: string) => {
   return response.data;
 };
 
+export const getDeviceConfig = async (id: number) => {
+  const response = await api.get(`/devices/${id}/config`);
+  return response.data;
+};
+
+export const updateDeviceConfig = async (
+  id: number,
+  config: Record<string, unknown>
+) => {
+  const response = await api.put(`/devices/${id}/config`, config);
+  return response.data;
+};
+
 export const createURLSource = async (url: string, deviceIDs: number[]) => {
   const response = await api.post('gallery/urls', {
     url,
