@@ -1123,7 +1123,7 @@
               </v-table>
 
               <!-- Edit Device Dialog (tabbed like device webapp) -->
-              <v-dialog v-model="showEditDeviceDialog" max-width="900px" scrollable>
+              <v-dialog v-model="showEditDeviceDialog" max-width="1100px" scrollable>
                 <v-card>
                   <v-card-title>{{ isAddingDevice ? 'Add Device' : editingDevice.name || 'Edit Device' }}</v-card-title>
                   <v-tabs v-if="!isAddingDevice" v-model="deviceDialogTab" density="compact">
