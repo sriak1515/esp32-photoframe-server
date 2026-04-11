@@ -1431,6 +1431,25 @@
                               ></v-text-field>
                             </v-col>
                           </v-row>
+                          <v-checkbox
+                            v-model="editingDevice.show_calendar"
+                            label="Show Google Calendar Events"
+                            color="primary"
+                            hide-details
+                            class="mt-2 mb-1"
+                          ></v-checkbox>
+                          <v-select
+                            v-if="editingDevice.show_calendar && form.google_calendar_connected === 'true'"
+                            v-model="editingDevice.calendar_id"
+                            :items="calendars"
+                            item-title="summary"
+                            item-value="id"
+                            label="Select Calendar"
+                            variant="outlined"
+                            density="compact"
+                            class="mt-2"
+                            :loading="!calendarLoaded"
+                          ></v-select>
                         </div>
 
                         <v-divider class="my-4" />
@@ -1452,25 +1471,6 @@
                               <div class="text-caption" style="line-height: 1.2">{{ opt.title }}</div>
                             </v-card>
                           </div>
-                          <v-checkbox
-                            v-model="editingDevice.show_calendar"
-                            label="Show Google Calendar Events"
-                            color="primary"
-                            hide-details
-                            class="mb-1"
-                          ></v-checkbox>
-                          <v-select
-                            v-if="editingDevice.show_calendar && form.google_calendar_connected === 'true'"
-                            v-model="editingDevice.calendar_id"
-                            :items="calendars"
-                            item-title="summary"
-                            item-value="id"
-                            label="Select Calendar"
-                            variant="outlined"
-                            density="compact"
-                            class="mt-2"
-                            :loading="!calendarLoaded"
-                          ></v-select>
                         </div>
 
                       </v-tabs-window-item>
