@@ -1346,7 +1346,7 @@
                         <v-divider class="my-4" />
 
                         <!-- Display Settings section header -->
-                        <div class="text-body-1 font-weight-medium mb-2">Display Settings</div>
+                        <div class="text-body-1 font-weight-medium mb-4">Display Settings</div>
                         <div class="ml-10">
                           <v-row dense>
                             <v-col cols="12" md="6">
@@ -1375,7 +1375,7 @@
                         <v-divider class="my-4" />
 
                         <!-- Overlay section -->
-                        <div class="text-body-1 font-weight-medium mb-2">Overlay</div>
+                        <div class="text-body-1 font-weight-medium mb-4">Overlay</div>
                         <div class="ml-10">
                           <div class="d-flex ga-4 flex-wrap">
                             <v-checkbox
@@ -1466,7 +1466,7 @@
                         <v-divider class="my-4" />
 
                         <!-- Layout section -->
-                        <div class="text-body-1 font-weight-medium mb-2">Layout</div>
+                        <div class="text-body-1 font-weight-medium mb-4">Layout</div>
                         <div class="ml-10">
                           <div class="d-flex flex-wrap ga-3 mb-3">
                             <v-card
