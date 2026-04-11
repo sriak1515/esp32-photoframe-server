@@ -1087,13 +1087,6 @@
                     </td>
                     <td>
                       {{ device.host }}
-                      <v-chip
-                        v-if="device.use_device_parameter"
-                        size="x-small"
-                        color="info"
-                        class="ml-2"
-                        >Auto-Param</v-chip
-                      >
                     </td>
                     <td class="text-right">
                       <v-btn
@@ -1135,8 +1128,21 @@
                     <v-tab value="ai">AI Generation</v-tab>
                     <v-tab value="palette">Palette</v-tab>
                   </v-tabs>
-                  <v-card-text style="min-height: 400px">
-                    <v-tabs-window v-model="deviceDialogTab">
+                  <v-card-text :style="isAddingDevice ? '' : 'min-height: 400px'">
+                    <!-- Add Device: just host input -->
+                    <div v-if="isAddingDevice" class="mt-2">
+                      <v-text-field
+                        v-model="editingDevice.host"
+                        label="Device Host / IP"
+                        variant="outlined"
+                        hint="e.g., photoframe.local or 192.168.1.100"
+                        persistent-hint
+                        autofocus
+                      ></v-text-field>
+                    </div>
+
+                    <!-- Edit Device: full tabbed UI -->
+                    <v-tabs-window v-if="!isAddingDevice" v-model="deviceDialogTab">
                       <!-- General Tab -->
                       <v-tabs-window-item value="general">
                         <v-row class="mt-1">
@@ -1204,13 +1210,6 @@
                             ></v-text-field>
                           </v-col>
                         </v-row>
-                        <v-checkbox
-                          v-model="editingDevice.use_device_parameter"
-                          label="Fetch processing parameters from device"
-                          color="primary"
-                          density="compact"
-                          hide-details
-                        ></v-checkbox>
                       </v-tabs-window-item>
 
                       <!-- Auto Rotate Tab -->
@@ -2139,7 +2138,7 @@ const syncFromDevice = async () => {
     await updateDevice(
       editingDevice.id,
       editingDevice.name!, editingDevice.host!,
-      0, 0, '', true,
+      0, 0, '',
       editingDevice.enable_collage!,
       editingDevice.show_date!,
       editingDevice.show_photo_date || false,
@@ -2158,6 +2157,8 @@ const syncFromDevice = async () => {
     // Re-load the updated device into the dialog
     const updated = availableDevices.value.find((d: Device) => d.id === editingDevice.id);
     if (updated) Object.assign(editingDevice, updated);
+    // Reload device config to reflect synced values
+    await loadDeviceConfig(editingDevice.id!);
     showMessage('Settings synced from device');
   } catch (e: any) {
     showMessage('Failed to sync: ' + (e.response?.data?.error || e.message), true);
@@ -2325,7 +2326,7 @@ const isAddingDevice = ref(false);
 const openAddDeviceDialog = () => {
   Object.assign(editingDevice, {
     id: undefined, name: '', host: '', width: 0, height: 0, orientation: '',
-    use_device_parameter: false, enable_collage: false,
+    enable_collage: false,
     show_date: true, show_photo_date: false, show_weather: true,
     weather_lat: null, weather_lon: null,
     ai_provider: '', ai_model: '', ai_prompt: '',
@@ -2375,7 +2376,6 @@ const saveDevice = async () => {
     if (isAddingDevice.value) {
       await addDevice({
         host: editingDevice.host!,
-        use_device_parameter: editingDevice.use_device_parameter!,
         enable_collage: editingDevice.enable_collage!,
         show_date: editingDevice.show_date!,
         show_photo_date: editingDevice.show_photo_date || false,
@@ -2397,7 +2397,6 @@ const saveDevice = async () => {
         editingDevice.name!, editingDevice.host!,
         editingDevice.width!, editingDevice.height!,
         deviceConfig.display_orientation || editingDevice.orientation!,
-        editingDevice.use_device_parameter!,
         editingDevice.enable_collage!,
         editingDevice.show_date!,
         editingDevice.show_photo_date || false,
@@ -2457,44 +2456,6 @@ const saveDevice = async () => {
     showMessage('Failed to save device: ' + (e.response?.data?.error || e.message), true);
   } finally {
     savingDeviceConfig.value = false;
-  }
-};
-
-const refreshDeviceParams = async (device: Device) => {
-  deviceListLoading.value = true;
-  try {
-    // Trigger refresh by sending empty/0 values with use_device_parameter=true
-    await updateDevice(
-      device.id,
-      '', // Empty name triggers fetch
-      device.host,
-      0, // Width 0 triggers fetch
-      0, // Height 0 triggers fetch
-      '', // Empty orientation triggers fetch
-      true, // Ensure enabled
-      device.enable_collage,
-      device.show_date!,
-      device.show_photo_date || false,
-      device.show_weather!,
-      device.weather_lat || 0,
-      device.weather_lon || 0,
-      device.ai_provider || '',
-      device.ai_model || '',
-      device.ai_prompt || '',
-      device.layout || 'photo_overlay',
-      device.display_mode || 'cover',
-      device.show_calendar || false,
-      device.calendar_id || ''
-    );
-    await loadDevices();
-    showMessage('Device parameters refreshed from device');
-  } catch (e: any) {
-    showMessage(
-      'Failed to refresh parameters: ' + (e.response?.data?.error || e.message),
-      true
-    );
-  } finally {
-    deviceListLoading.value = false;
   }
 };
 

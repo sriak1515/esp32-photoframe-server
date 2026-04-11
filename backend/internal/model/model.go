@@ -58,7 +58,6 @@ type Device struct {
 	Host               string    `json:"host"` // IP or Hostname
 	Width              int       `json:"width"`
 	Height             int       `json:"height"`
-	UseDeviceParameter bool      `json:"use_device_parameter"`
 	Orientation        string    `json:"orientation"`
 	EnableCollage      bool      `json:"enable_collage"` // Per-device collage setting
 	ShowDate           bool      `json:"show_date"`

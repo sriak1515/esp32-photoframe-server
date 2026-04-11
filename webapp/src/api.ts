@@ -59,7 +59,7 @@ export interface Device {
   width: number;
   height: number;
   orientation: string;
-  use_device_parameter: boolean;
+
   enable_collage: boolean;
   show_date?: boolean;
   show_photo_date?: boolean;
@@ -85,7 +85,7 @@ export const listDevices = async () => {
 
 export const addDevice = async (params: {
   host: string;
-  use_device_parameter: boolean;
+
   enable_collage: boolean;
   show_date: boolean;
   show_photo_date?: boolean;
@@ -109,7 +109,6 @@ export const updateDevice = async (
   width: number,
   height: number,
   orientation: string,
-  useDeviceParameter: boolean,
   enableCollage: boolean,
   showDate: boolean,
   showPhotoDate: boolean,
@@ -131,7 +130,6 @@ export const updateDevice = async (
     width,
     height,
     orientation,
-    use_device_parameter: useDeviceParameter,
     enable_collage: enableCollage,
     show_date: showDate,
     show_photo_date: showPhotoDate,

@@ -1,0 +1,1 @@
+ALTER TABLE devices ADD COLUMN use_device_parameter BOOLEAN DEFAULT FALSE;

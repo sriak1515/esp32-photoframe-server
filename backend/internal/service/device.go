@@ -60,7 +60,7 @@ func (s *DeviceService) ListDevices() ([]model.Device, error) {
 	return devices, nil
 }
 
-func (s *DeviceService) AddDevice(host string, useDeviceParameter, enableCollage, showDate, showPhotoDate, showWeather bool, weatherLat, weatherLon float64, layout string, displayMode string, showCalendar bool, calendarID string, dateFormat string) (*model.Device, error) {
+func (s *DeviceService) AddDevice(host string, enableCollage, showDate, showPhotoDate, showWeather bool, weatherLat, weatherLon float64, layout string, displayMode string, showCalendar bool, calendarID string, dateFormat string) (*model.Device, error) {
 	// Try to fetch device info (works on LAN, fails for remote devices)
 	var name string
 	var width, height int
@@ -106,7 +106,6 @@ func (s *DeviceService) AddDevice(host string, useDeviceParameter, enableCollage
 		Width:              width,
 		Height:             height,
 		Orientation:        orientation,
-		UseDeviceParameter: useDeviceParameter,
 		EnableCollage:      enableCollage,
 		ShowDate:           showDate,
 		ShowPhotoDate:      showPhotoDate,
@@ -125,7 +124,7 @@ func (s *DeviceService) AddDevice(host string, useDeviceParameter, enableCollage
 	return device, nil
 }
 
-func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height int, orientation string, useDeviceParameter, enableCollage, showDate, showPhotoDate, showWeather bool, weatherLat, weatherLon float64, aiProvider, aiModel, aiPrompt string, layout string, displayMode string, showCalendar bool, calendarID string, dateFormat string) (*model.Device, error) {
+func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height int, orientation string, enableCollage, showDate, showPhotoDate, showWeather bool, weatherLat, weatherLon float64, aiProvider, aiModel, aiPrompt string, layout string, displayMode string, showCalendar bool, calendarID string, dateFormat string) (*model.Device, error) {
 	var device model.Device
 	if err := s.db.First(&device, id).Error; err != nil {
 		return nil, errors.New("device not found")
@@ -173,7 +172,6 @@ func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height i
 	device.Width = width
 	device.Height = height
 	device.Orientation = orientation
-	device.UseDeviceParameter = useDeviceParameter
 	device.EnableCollage = enableCollage
 	device.ShowDate = showDate
 	device.ShowPhotoDate = showPhotoDate
@@ -254,31 +252,6 @@ func (s *DeviceService) PushToHost(device *model.Device, imagePath string, extra
 	// Use PNG for older firmware that doesn't support epdgz
 	if sysInfoErr != nil || !photoframe.SupportsEPDGZ(sysInfo.Version) {
 		processingOpts["format"] = "png"
-	}
-
-	if device.UseDeviceParameter {
-		// 1. Fetch Dimensions (reuse already-fetched system info)
-		if sysInfoErr == nil {
-			device.Width = sysInfo.Width
-			device.Height = sysInfo.Height
-		}
-
-		// 2. Fetch Processing Settings and Palette
-		procSettings, err := s.pfClient.FetchProcessingSettings(device.Host)
-		if err != nil {
-			log.Printf("Failed to fetch processing settings from %s: %v", device.Host, err)
-		}
-
-		palette, err := s.pfClient.FetchPalette(device.Host)
-		if err != nil {
-			log.Printf("Failed to fetch palette from %s: %v", device.Host, err)
-		}
-
-		fetchedOpts := s.processor.MapProcessingSettings(procSettings, palette)
-		for k, v := range fetchedOpts {
-			processingOpts[k] = v
-		}
-		log.Printf("Fetched processing parameters for %s", device.Name)
 	}
 
 	// 1. Validate dimensions

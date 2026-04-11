@@ -160,19 +160,18 @@ func (h *DeviceHandler) ListDevices(c echo.Context) error {
 // POST /api/devices
 func (h *DeviceHandler) AddDevice(c echo.Context) error {
 	var req struct {
-		Host               string  `json:"host"`
-		UseDeviceParameter bool    `json:"use_device_parameter"`
-		EnableCollage      bool    `json:"enable_collage"`
-		ShowDate           bool    `json:"show_date"`
-		ShowPhotoDate      bool    `json:"show_photo_date"`
-		ShowWeather        bool    `json:"show_weather"`
-		WeatherLat         float64 `json:"weather_lat"`
-		WeatherLon         float64 `json:"weather_lon"`
-		Layout             string  `json:"layout"`
-		DisplayMode        string  `json:"display_mode"`
-		ShowCalendar       bool    `json:"show_calendar"`
-		CalendarID         string  `json:"calendar_id"`
-		DateFormat         string  `json:"date_format"`
+		Host          string  `json:"host"`
+		EnableCollage bool    `json:"enable_collage"`
+		ShowDate      bool    `json:"show_date"`
+		ShowPhotoDate bool    `json:"show_photo_date"`
+		ShowWeather   bool    `json:"show_weather"`
+		WeatherLat    float64 `json:"weather_lat"`
+		WeatherLon    float64 `json:"weather_lon"`
+		Layout        string  `json:"layout"`
+		DisplayMode   string  `json:"display_mode"`
+		ShowCalendar  bool    `json:"show_calendar"`
+		CalendarID    string  `json:"calendar_id"`
+		DateFormat    string  `json:"date_format"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -186,7 +185,7 @@ func (h *DeviceHandler) AddDevice(c echo.Context) error {
 		req.Layout = model.LayoutPhotoOverlay
 	}
 
-	device, err := h.deviceService.AddDevice(req.Host, req.UseDeviceParameter, req.EnableCollage, req.ShowDate, req.ShowPhotoDate, req.ShowWeather, req.WeatherLat, req.WeatherLon, req.Layout, req.DisplayMode, req.ShowCalendar, req.CalendarID, req.DateFormat)
+	device, err := h.deviceService.AddDevice(req.Host, req.EnableCollage, req.ShowDate, req.ShowPhotoDate, req.ShowWeather, req.WeatherLat, req.WeatherLon, req.Layout, req.DisplayMode, req.ShowCalendar, req.CalendarID, req.DateFormat)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -197,13 +196,12 @@ func (h *DeviceHandler) AddDevice(c echo.Context) error {
 func (h *DeviceHandler) UpdateDevice(c echo.Context) error {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var req struct {
-		Name               string  `json:"name"`
-		Host               string  `json:"host"`
-		Width              int     `json:"width"`
-		Height             int     `json:"height"`
-		Orientation        string  `json:"orientation"`
-		UseDeviceParameter bool    `json:"use_device_parameter"`
-		EnableCollage      bool    `json:"enable_collage"`
+		Name          string  `json:"name"`
+		Host          string  `json:"host"`
+		Width         int     `json:"width"`
+		Height        int     `json:"height"`
+		Orientation   string  `json:"orientation"`
+		EnableCollage bool    `json:"enable_collage"`
 		ShowDate           bool    `json:"show_date"`
 		ShowPhotoDate      bool    `json:"show_photo_date"`
 		ShowWeather        bool    `json:"show_weather"`
@@ -226,7 +224,7 @@ func (h *DeviceHandler) UpdateDevice(c echo.Context) error {
 		req.Layout = model.LayoutPhotoOverlay
 	}
 
-	device, err := h.deviceService.UpdateDevice(uint(id), req.Name, req.Host, req.Width, req.Height, req.Orientation, req.UseDeviceParameter, req.EnableCollage, req.ShowDate, req.ShowPhotoDate, req.ShowWeather, req.WeatherLat, req.WeatherLon, req.AIProvider, req.AIModel, req.AIPrompt, req.Layout, req.DisplayMode, req.ShowCalendar, req.CalendarID, req.DateFormat)
+	device, err := h.deviceService.UpdateDevice(uint(id), req.Name, req.Host, req.Width, req.Height, req.Orientation, req.EnableCollage, req.ShowDate, req.ShowPhotoDate, req.ShowWeather, req.WeatherLat, req.WeatherLon, req.AIProvider, req.AIModel, req.AIPrompt, req.Layout, req.DisplayMode, req.ShowCalendar, req.CalendarID, req.DateFormat)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
