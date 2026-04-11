@@ -2106,11 +2106,20 @@ const loadDeviceConfig = async (deviceId: number) => {
       save_downloaded_images: cfg.save_downloaded_images ?? true,
     });
 
-    // Detect if image_url points to this server (contains /image/ path)
+    // Detect if image_url points to this server
     const imgUrl = cfg.image_url || '';
-    useThisServer.value = imgUrl.includes('/image/');
-    if (useThisServer.value) {
-      // Extract source from URL path (e.g., .../image/immich -> immich)
+    let isThisServer = false;
+    if (imgUrl.includes('/image/')) {
+      try {
+        const imgHost = new URL(imgUrl).hostname;
+        const serverHost = window.location.hostname;
+        isThisServer = imgHost === serverHost;
+      } catch {
+        isThisServer = false;
+      }
+    }
+    useThisServer.value = isThisServer;
+    if (isThisServer) {
       const match = imgUrl.match(/\/image\/([^/?]+)/);
       if (match) {
         selectedSource.value = match[1];
