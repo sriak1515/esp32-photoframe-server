@@ -1072,7 +1072,7 @@
                 <thead>
                   <tr>
                     <th>Name</th>
-                    <th>Resolution</th>
+                    <th>Model</th>
                     <th>Host</th>
                     <th class="text-right">Action</th>
                   </tr>
@@ -1080,11 +1080,7 @@
                 <tbody>
                   <tr v-for="device in availableDevices" :key="device.id">
                     <td>{{ device.name }}</td>
-                    <td>
-                      {{ device.width }}x{{ device.height }} ({{
-                        device.orientation
-                      }})
-                    </td>
+                    <td>{{ device.board_name || `${device.width}x${device.height}` }}</td>
                     <td>
                       {{ device.host }}
                     </td>

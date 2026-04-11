@@ -59,6 +59,7 @@ type Device struct {
 	Width              int       `json:"width"`
 	Height             int       `json:"height"`
 	Orientation        string    `json:"orientation"`
+	BoardName          string    `json:"board_name"`
 	EnableCollage      bool      `json:"enable_collage"` // Per-device collage setting
 	ShowDate           bool      `json:"show_date"`
 	ShowPhotoDate      bool      `json:"show_photo_date"`

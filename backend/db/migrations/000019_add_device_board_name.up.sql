@@ -1,0 +1,1 @@
+ALTER TABLE devices ADD COLUMN board_name TEXT DEFAULT '';
