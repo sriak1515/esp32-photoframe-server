@@ -135,7 +135,7 @@ func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height i
 	shouldRefresh := name == "" || width == 0 || height == 0 || orientation == ""
 
 	if shouldRefresh {
-		// Fetch info
+		// Fetch system info (name, dimensions)
 		sysInfo, err := s.pfClient.FetchSystemInfo(host)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch system info: %w", err)
@@ -146,13 +146,33 @@ func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height i
 		width = sysInfo.Width
 		height = sysInfo.Height
 
-		// Fetch orientation
-		config, err := s.pfClient.FetchDeviceConfig(host)
+		// Fetch and store full device config
+		configRaw, err := s.pfClient.FetchDeviceConfigRaw(host)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch device config: %w", err)
 		}
-		if config.DisplayOrientation != "" {
+		device.DeviceConfig = configRaw
+
+		// Parse orientation from config
+		config, _ := s.pfClient.FetchDeviceConfig(host)
+		if config != nil && config.DisplayOrientation != "" {
 			orientation = config.DisplayOrientation
+		}
+
+		// Fetch and store processing settings
+		procRaw, err := s.pfClient.FetchProcessingSettingsRaw(host)
+		if err != nil {
+			log.Printf("Failed to fetch processing settings from %s: %v", host, err)
+		} else {
+			device.DeviceProcessingSettings = procRaw
+		}
+
+		// Fetch and store palette
+		paletteRaw, err := s.pfClient.FetchPaletteRaw(host)
+		if err != nil {
+			log.Printf("Failed to fetch palette from %s: %v", host, err)
+		} else {
+			device.DeviceColorPalette = paletteRaw
 		}
 	}
 

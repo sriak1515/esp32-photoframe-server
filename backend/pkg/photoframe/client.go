@@ -332,6 +332,102 @@ func (c *Client) FetchDeviceConfig(host string) (*DeviceConfig, error) {
 	return &config, nil
 }
 
+// FetchDeviceConfigRaw returns the full device config as a raw JSON string.
+func (c *Client) FetchDeviceConfigRaw(host string) (string, error) {
+	ip, err := c.resolveHost(host)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve device %s: %w", host, err)
+	}
+
+	url := fmt.Sprintf("http://%s/api/config", ip)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Host = host
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("device returned status: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read config: %w", err)
+	}
+
+	return string(body), nil
+}
+
+// FetchProcessingSettingsRaw returns the device processing settings as a raw JSON string.
+func (c *Client) FetchProcessingSettingsRaw(host string) (string, error) {
+	ip, err := c.resolveHost(host)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve device %s: %w", host, err)
+	}
+
+	url := fmt.Sprintf("http://%s/api/settings/processing", ip)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Host = host
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("device returned status: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read processing settings: %w", err)
+	}
+
+	return string(body), nil
+}
+
+// FetchPaletteRaw returns the device color palette as a raw JSON string.
+func (c *Client) FetchPaletteRaw(host string) (string, error) {
+	ip, err := c.resolveHost(host)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve device %s: %w", host, err)
+	}
+
+	url := fmt.Sprintf("http://%s/api/settings/palette", ip)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Host = host
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("device returned status: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read palette: %w", err)
+	}
+
+	return string(body), nil
+}
+
 func (c *Client) PushConfig(host string, config map[string]interface{}) error {
 	ip, err := c.resolveHost(host)
 	if err != nil {
