@@ -1861,9 +1861,11 @@ const bindDeviceSource = async () => {
       editingDevice.id,
       selectedSource.value
     );
-    showMessage(`Image source bound: ${selectedSource.value}. URL: ${res.url}`);
-    // Reload device config to reflect the new image_url
-    await loadDeviceConfig(editingDevice.id);
+    // Update local config with the new URL from the bind response
+    deviceConfig.image_url = res.url;
+    deviceConfig.rotation_mode = 'url';
+    deviceConfig.auto_rotate = true;
+    showMessage(`Image source bound: ${selectedSource.value}`);
   } catch (e: any) {
     showMessage(
       'Failed to bind source: ' + (e.response?.data?.error || e.message),
