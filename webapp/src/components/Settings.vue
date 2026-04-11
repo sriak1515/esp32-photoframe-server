@@ -2110,6 +2110,10 @@ const loadDeviceConfig = async (deviceId: number) => {
 
     // Config
     const cfg = parse(data.config);
+    // Update device name from device config if available
+    if (cfg.device_name) {
+      editingDevice.name = cfg.device_name;
+    }
     Object.assign(deviceConfig, {
       auto_rotate: cfg.auto_rotate ?? false,
       rotate_interval: cfg.rotate_interval ?? 3600,
@@ -2501,6 +2505,7 @@ const saveDevice = async () => {
 
       const result = await updateDeviceConfig(editingDevice.id, {
         config: {
+          device_name: editingDevice.name,
           auto_rotate: deviceConfig.auto_rotate,
           rotate_interval: deviceConfig.rotate_interval,
           auto_rotate_aligned: deviceConfig.auto_rotate_aligned,
