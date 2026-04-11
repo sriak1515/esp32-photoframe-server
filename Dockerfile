@@ -21,7 +21,7 @@ FROM node:20-alpine AS frontend-builder
 ARG ADDON_PORT=9607
 WORKDIR /app
 COPY webapp/package*.json ./
-RUN npm install
+RUN npm install --ignore-scripts
 COPY webapp/ ./
 RUN VITE_ADDON_PORT=${ADDON_PORT} npm run build
 
