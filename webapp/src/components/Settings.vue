@@ -1128,7 +1128,7 @@
                     <v-tab value="ai">AI Generation</v-tab>
                     <v-tab value="palette">Palette</v-tab>
                   </v-tabs>
-                  <v-card-text :style="isAddingDevice ? '' : 'height: 450px; overflow-y: auto'">
+                  <v-card-text :style="isAddingDevice ? '' : 'height: 460px; overflow-y: auto'">
                     <!-- Add Device: just host input -->
                     <div v-if="isAddingDevice" class="mt-2">
                       <v-text-field
@@ -2027,6 +2027,9 @@ const detectProcessingPreset = () => {
     const matches = keys.every((k) => {
       const pv = preset[k];
       const dv = (deviceProcessing as any)[k];
+      if (typeof pv === 'number' && typeof dv === 'number') {
+        return Math.abs(pv - dv) < 0.001;
+      }
       return pv === dv;
     });
     if (matches) {
@@ -2036,6 +2039,11 @@ const detectProcessingPreset = () => {
   }
   processingPreset.value = 'custom';
 };
+
+// Re-detect preset when processing params change
+watch(deviceProcessing, () => {
+  detectProcessingPreset();
+}, { deep: true });
 
 // Device color palette (synced remotely)
 const paletteColors = ['black', 'white', 'yellow', 'red', 'blue', 'green'] as const;
