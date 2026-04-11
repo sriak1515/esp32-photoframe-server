@@ -1343,10 +1343,9 @@
                           </v-row>
                         </div>
 
-                        <v-divider class="my-3" />
+                        <v-divider class="my-4" />
 
                         <!-- Server-side display settings -->
-                        <div class="text-subtitle-2 mb-2">Display Options</div>
                         <v-select
                           v-model="editingDevice.display_mode"
                           :items="[
@@ -1357,42 +1356,41 @@
                           variant="outlined"
                           density="compact"
                           hide-details
-                          class="mb-3"
+                          class="mb-4"
                         ></v-select>
+
                         <v-checkbox
                           v-model="editingDevice.enable_collage"
                           label="Enable Collage Mode"
                           color="primary"
-                          density="compact"
                           hide-details
+                          class="mb-2"
                         ></v-checkbox>
 
+                        <v-divider class="my-4" />
+
                         <!-- Overlay settings -->
-                        <div class="text-subtitle-2 mt-4 mb-2">Overlay</div>
-                        <div class="d-flex ga-4 flex-wrap">
+                        <div class="d-flex ga-4 flex-wrap mb-2">
                           <v-checkbox
                             v-model="editingDevice.show_date"
-                            label="Date"
+                            label="Show Date"
                             color="primary"
-                            density="compact"
                             hide-details
                           ></v-checkbox>
                           <v-checkbox
                             v-model="editingDevice.show_photo_date"
-                            label="Photo Date"
+                            label="Show Photo Date"
                             color="primary"
-                            density="compact"
                             hide-details
                           ></v-checkbox>
                           <v-checkbox
                             v-model="editingDevice.show_weather"
-                            label="Weather"
+                            label="Show Weather"
                             color="primary"
-                            density="compact"
                             hide-details
                           ></v-checkbox>
                         </div>
-                        <div v-if="editingDevice.show_date" class="mt-2">
+                        <div v-if="editingDevice.show_date" class="ml-10 mt-2">
                           <v-select
                             v-model="editingDevice.date_format"
                             :items="dateFormatOptions"
@@ -1404,7 +1402,7 @@
                             hide-details
                           ></v-select>
                         </div>
-                        <div v-if="editingDevice.show_weather" class="d-flex ga-2 mt-2">
+                        <div v-if="editingDevice.show_weather" class="d-flex ga-2 ml-10 mt-2">
                           <v-text-field
                             v-model.number="editingDevice.weather_lat"
                             label="Latitude"
@@ -1423,9 +1421,10 @@
                           ></v-text-field>
                         </div>
 
+                        <v-divider class="my-4" />
+
                         <!-- Layout -->
-                        <div class="text-subtitle-2 mt-4 mb-2">Layout</div>
-                        <div class="d-flex flex-wrap ga-3 mb-2">
+                        <div class="d-flex flex-wrap ga-3 mb-3">
                           <v-card
                             v-for="opt in filteredLayoutOptions"
                             :key="opt.value"
@@ -1440,13 +1439,12 @@
                           </v-card>
                         </div>
 
-                        <!-- Calendar -->
                         <v-checkbox
                           v-model="editingDevice.show_calendar"
                           label="Show Google Calendar Events"
                           color="primary"
-                          density="compact"
                           hide-details
+                          class="mb-2"
                         ></v-checkbox>
                         <v-select
                           v-if="editingDevice.show_calendar && form.google_calendar_connected === 'true'"
