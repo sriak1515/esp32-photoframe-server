@@ -1431,13 +1431,24 @@
                               ></v-text-field>
                             </v-col>
                           </v-row>
-                          <v-checkbox
-                            v-model="editingDevice.show_calendar"
-                            label="Show Google Calendar Events"
-                            color="primary"
-                            hide-details
-                            class="mt-2 mb-1"
-                          ></v-checkbox>
+                          <v-tooltip
+                            :disabled="form.google_calendar_connected === 'true'"
+                            location="top"
+                            text="Connect Google Calendar in Data Sources first"
+                          >
+                            <template #activator="{ props }">
+                              <div v-bind="props" class="d-inline-flex">
+                                <v-checkbox
+                                  v-model="editingDevice.show_calendar"
+                                  label="Show Google Calendar Events"
+                                  color="primary"
+                                  hide-details
+                                  class="mt-2 mb-1"
+                                  :disabled="form.google_calendar_connected !== 'true'"
+                                ></v-checkbox>
+                              </div>
+                            </template>
+                          </v-tooltip>
                           <v-select
                             v-if="editingDevice.show_calendar && form.google_calendar_connected === 'true'"
                             v-model="editingDevice.calendar_id"
