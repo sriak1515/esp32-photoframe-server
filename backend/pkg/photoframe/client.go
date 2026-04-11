@@ -1,13 +1,18 @@
 package photoframe
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net"
 	"net/http"
+	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -171,6 +176,16 @@ func (c *Client) resolveHost(host string) (string, error) {
 		return host, nil
 	}
 
+	// For .local (mDNS) on macOS, use dns-sd for fast resolution
+	// (Go's net.LookupHost has a 5s timeout trying regular DNS first)
+	if strings.HasSuffix(host, ".local") && runtime.GOOS == "darwin" {
+		if ip, err := resolveMDNSDarwin(host); err == nil {
+			c.resolvedIP = ip
+			return ip, nil
+		}
+		// Fall through to standard resolver
+	}
+
 	ips, err := net.LookupHost(host)
 	if err != nil {
 		return "", err
@@ -191,6 +206,40 @@ func (c *Client) resolveHost(host string) (string, error) {
 	}
 
 	return "", fmt.Errorf("no IP found for host %s", host)
+}
+
+// resolveMDNSDarwin uses macOS dns-sd for fast mDNS resolution (~10ms vs 5s).
+func resolveMDNSDarwin(host string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "dns-sd", "-G", "v4", host)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		line := scanner.Text()
+		// Skip header lines; look for the result line containing the hostname
+		if strings.Contains(line, host) && !strings.HasPrefix(line, "DATE") && !strings.HasPrefix(line, "Timestamp") {
+			for _, field := range strings.Fields(line) {
+				if net.ParseIP(field) != nil && strings.Contains(field, ".") {
+					log.Printf("mDNS resolved %s -> %s", host, field)
+					cmd.Process.Kill()
+					return field, nil
+				}
+			}
+		}
+	}
+
+	cmd.Process.Kill()
+	cmd.Wait()
+	return "", fmt.Errorf("dns-sd: no result for %s", host)
 }
 
 func (c *Client) checkReachability(ip string) error {
