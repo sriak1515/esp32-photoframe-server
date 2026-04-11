@@ -1345,119 +1345,118 @@
 
                         <v-divider class="my-4" />
 
-                        <!-- Server-side display settings -->
-                        <v-select
-                          v-model="editingDevice.display_mode"
-                          :items="[
-                            { title: 'Cover (fill, may crop)', value: 'cover' },
-                            { title: 'Fit (show entire photo)', value: 'fit' },
-                          ]"
-                          label="Photo Display Mode"
-                          variant="outlined"
-                          density="compact"
-                          hide-details
-                          class="mb-4"
-                        ></v-select>
-
-                        <v-checkbox
-                          v-model="editingDevice.enable_collage"
-                          label="Enable Collage Mode"
-                          color="primary"
-                          hide-details
-                          class="mb-2"
-                        ></v-checkbox>
-
-                        <v-divider class="my-4" />
-
-                        <!-- Overlay settings -->
-                        <div class="d-flex ga-4 flex-wrap mb-2">
-                          <v-checkbox
-                            v-model="editingDevice.show_date"
-                            label="Show Date"
-                            color="primary"
-                            hide-details
-                          ></v-checkbox>
-                          <v-checkbox
-                            v-model="editingDevice.show_photo_date"
-                            label="Show Photo Date"
-                            color="primary"
-                            hide-details
-                          ></v-checkbox>
-                          <v-checkbox
-                            v-model="editingDevice.show_weather"
-                            label="Show Weather"
-                            color="primary"
-                            hide-details
-                          ></v-checkbox>
-                        </div>
-                        <div v-if="editingDevice.show_date" class="ml-10 mt-2">
+                        <!-- Display Settings section header -->
+                        <div class="text-body-1 font-weight-medium mb-2">Display Settings</div>
+                        <div class="ml-10">
                           <v-select
-                            v-model="editingDevice.date_format"
-                            :items="dateFormatOptions"
-                            item-title="label"
-                            item-value="value"
-                            label="Date Format"
+                            v-model="editingDevice.display_mode"
+                            :items="[
+                              { title: 'Cover (fill, may crop)', value: 'cover' },
+                              { title: 'Fit (show entire photo)', value: 'fit' },
+                            ]"
+                            label="Photo Display Mode"
                             variant="outlined"
                             density="compact"
                             hide-details
+                            class="mb-2"
+                          ></v-select>
+
+                          <v-checkbox
+                            v-model="editingDevice.enable_collage"
+                            label="Enable Collage Mode"
+                            color="primary"
+                            hide-details
+                            class="mb-2"
+                          ></v-checkbox>
+
+                          <!-- Overlay -->
+                          <div class="d-flex ga-4 flex-wrap mb-2">
+                            <v-checkbox
+                              v-model="editingDevice.show_date"
+                              label="Show Date"
+                              color="primary"
+                              hide-details
+                            ></v-checkbox>
+                            <v-checkbox
+                              v-model="editingDevice.show_photo_date"
+                              label="Show Photo Date"
+                              color="primary"
+                              hide-details
+                            ></v-checkbox>
+                            <v-checkbox
+                              v-model="editingDevice.show_weather"
+                              label="Show Weather"
+                              color="primary"
+                              hide-details
+                            ></v-checkbox>
+                          </div>
+                          <div v-if="editingDevice.show_date" class="mt-2">
+                            <v-select
+                              v-model="editingDevice.date_format"
+                              :items="dateFormatOptions"
+                              item-title="label"
+                              item-value="value"
+                              label="Date Format"
+                              variant="outlined"
+                              density="compact"
+                              hide-details
+                            ></v-select>
+                          </div>
+                          <div v-if="editingDevice.show_weather" class="d-flex ga-2 mt-2">
+                            <v-text-field
+                              v-model.number="editingDevice.weather_lat"
+                              label="Latitude"
+                              variant="outlined"
+                              density="compact"
+                              hide-details
+                              type="number"
+                            ></v-text-field>
+                            <v-text-field
+                              v-model.number="editingDevice.weather_lon"
+                              label="Longitude"
+                              variant="outlined"
+                              density="compact"
+                              hide-details
+                              type="number"
+                            ></v-text-field>
+                          </div>
+
+                          <!-- Layout -->
+                          <div class="d-flex flex-wrap ga-3 mt-4 mb-3">
+                            <v-card
+                              v-for="opt in filteredLayoutOptions"
+                              :key="opt.value"
+                              :variant="editingDevice.layout === opt.value ? 'outlined' : 'flat'"
+                              :color="editingDevice.layout === opt.value ? 'primary' : undefined"
+                              class="layout-preview-card pa-2 text-center"
+                              style="width: 100px; cursor: pointer"
+                              @click="editingDevice.layout = opt.value"
+                            >
+                              <div class="layout-preview mb-1" v-html="getLayoutPreviewSvg(opt.value, editingDevice.orientation || 'landscape')"></div>
+                              <div class="text-caption" style="line-height: 1.2">{{ opt.title }}</div>
+                            </v-card>
+                          </div>
+
+                          <v-checkbox
+                            v-model="editingDevice.show_calendar"
+                            label="Show Google Calendar Events"
+                            color="primary"
+                            hide-details
+                            class="mb-2"
+                          ></v-checkbox>
+                          <v-select
+                            v-if="editingDevice.show_calendar && form.google_calendar_connected === 'true'"
+                            v-model="editingDevice.calendar_id"
+                            :items="calendars"
+                            item-title="summary"
+                            item-value="id"
+                            label="Select Calendar"
+                            variant="outlined"
+                            density="compact"
+                            class="mt-2"
+                            :loading="!calendarLoaded"
                           ></v-select>
                         </div>
-                        <div v-if="editingDevice.show_weather" class="d-flex ga-2 ml-10 mt-2">
-                          <v-text-field
-                            v-model.number="editingDevice.weather_lat"
-                            label="Latitude"
-                            variant="outlined"
-                            density="compact"
-                            hide-details
-                            type="number"
-                          ></v-text-field>
-                          <v-text-field
-                            v-model.number="editingDevice.weather_lon"
-                            label="Longitude"
-                            variant="outlined"
-                            density="compact"
-                            hide-details
-                            type="number"
-                          ></v-text-field>
-                        </div>
-
-                        <v-divider class="my-4" />
-
-                        <!-- Layout -->
-                        <div class="d-flex flex-wrap ga-3 mb-3">
-                          <v-card
-                            v-for="opt in filteredLayoutOptions"
-                            :key="opt.value"
-                            :variant="editingDevice.layout === opt.value ? 'outlined' : 'flat'"
-                            :color="editingDevice.layout === opt.value ? 'primary' : undefined"
-                            class="layout-preview-card pa-2 text-center"
-                            style="width: 100px; cursor: pointer"
-                            @click="editingDevice.layout = opt.value"
-                          >
-                            <div class="layout-preview mb-1" v-html="getLayoutPreviewSvg(opt.value, editingDevice.orientation || 'landscape')"></div>
-                            <div class="text-caption" style="line-height: 1.2">{{ opt.title }}</div>
-                          </v-card>
-                        </div>
-
-                        <v-checkbox
-                          v-model="editingDevice.show_calendar"
-                          label="Show Google Calendar Events"
-                          color="primary"
-                          hide-details
-                          class="mb-2"
-                        ></v-checkbox>
-                        <v-select
-                          v-if="editingDevice.show_calendar && form.google_calendar_connected === 'true'"
-                          v-model="editingDevice.calendar_id"
-                          :items="calendars"
-                          item-title="summary"
-                          item-value="id"
-                          label="Select Calendar"
-                          variant="outlined"
-                          density="compact"
-                          class="mt-2"
-                          :loading="!calendarLoaded"
-                        ></v-select>
 
                       </v-tabs-window-item>
 
