@@ -1214,39 +1214,12 @@
 
                       <!-- Auto Rotate Tab -->
                       <v-tabs-window-item value="autoRotate">
-                        <!-- Image Source (server-side) -->
-                        <div class="text-subtitle-2 mt-2 mb-2">Image Source</div>
-                        <v-row dense class="mb-2">
-                          <v-col>
-                            <v-select
-                              v-model="selectedSource"
-                              :items="sourceOptions"
-                              label="Source"
-                              variant="outlined"
-                              density="compact"
-                              hide-details
-                            ></v-select>
-                          </v-col>
-                          <v-col cols="auto" class="d-flex align-center">
-                            <v-btn
-                              color="primary"
-                              variant="tonal"
-                              size="small"
-                              :loading="isBinding"
-                              @click="bindDeviceSource"
-                            >Bind</v-btn>
-                          </v-col>
-                        </v-row>
-
-                        <v-divider class="my-3" />
-
-                        <!-- Auto Rotate (device config) -->
                         <v-switch
                           v-model="deviceConfig.auto_rotate"
                           label="Enable Auto-Rotate"
                           color="primary"
                           hide-details
-                          class="mb-2"
+                          class="mt-2 mb-2"
                         />
                         <div class="ml-10">
                           <v-select
@@ -1275,15 +1248,64 @@
                             class="mt-4 mb-2"
                             :disabled="!deviceConfig.auto_rotate"
                           />
-                          <v-checkbox
-                            v-if="deviceConfig.rotation_mode === 'url'"
-                            v-model="deviceConfig.save_downloaded_images"
-                            label="Save downloaded images to Downloads album"
-                            color="primary"
-                            hide-details
-                            class="mb-2"
-                            :disabled="!deviceConfig.auto_rotate"
-                          />
+
+                          <!-- URL source config (shown when rotation mode is URL) -->
+                          <div v-if="deviceConfig.rotation_mode === 'url'">
+                            <v-checkbox
+                              v-model="useThisServer"
+                              label="Use this server as image source"
+                              color="primary"
+                              hide-details
+                              class="mb-2"
+                              :disabled="!deviceConfig.auto_rotate"
+                            />
+
+                            <!-- This server: source dropdown + bind -->
+                            <v-row v-if="useThisServer" dense class="mb-2 ml-8">
+                              <v-col>
+                                <v-select
+                                  v-model="selectedSource"
+                                  :items="sourceOptions"
+                                  label="Image Source"
+                                  variant="outlined"
+                                  density="compact"
+                                  hide-details
+                                  :disabled="!deviceConfig.auto_rotate"
+                                ></v-select>
+                              </v-col>
+                              <v-col cols="auto" class="d-flex align-center">
+                                <v-btn
+                                  color="primary"
+                                  variant="tonal"
+                                  size="small"
+                                  :loading="isBinding"
+                                  :disabled="!deviceConfig.auto_rotate"
+                                  @click="bindDeviceSource"
+                                >Bind</v-btn>
+                              </v-col>
+                            </v-row>
+
+                            <!-- Custom URL -->
+                            <v-text-field
+                              v-if="!useThisServer"
+                              v-model="deviceConfig.image_url"
+                              label="Image URL"
+                              variant="outlined"
+                              density="compact"
+                              hide-details
+                              class="mb-2 ml-8"
+                              :disabled="!deviceConfig.auto_rotate"
+                            />
+
+                            <v-checkbox
+                              v-model="deviceConfig.save_downloaded_images"
+                              label="Save downloaded images to Downloads album"
+                              color="primary"
+                              hide-details
+                              class="mb-2"
+                              :disabled="!deviceConfig.auto_rotate"
+                            />
+                          </div>
                         </div>
 
                         <v-divider class="my-3" />
@@ -1801,6 +1823,7 @@ const galleryTab = ref('immich');
 const confirmDialog = ref();
 
 // Image Source Binding State
+const useThisServer = ref(true);
 const selectedSource = ref('immich');
 const sourceOptions = [
   { title: 'Immich', value: 'immich' },
@@ -2082,6 +2105,20 @@ const loadDeviceConfig = async (deviceId: number) => {
       rotation_mode: cfg.rotation_mode ?? 'storage',
       image_url: cfg.image_url ?? '',
       save_downloaded_images: cfg.save_downloaded_images ?? true,
+    });
+
+    // Detect if image_url points to this server (contains /image/ path)
+    const imgUrl = cfg.image_url || '';
+    useThisServer.value = imgUrl.includes('/image/');
+    if (useThisServer.value) {
+      // Extract source from URL path (e.g., .../image/immich -> immich)
+      const match = imgUrl.match(/\/image\/([^/?]+)/);
+      if (match) {
+        selectedSource.value = match[1];
+      }
+    }
+
+    Object.assign(deviceConfig, {
       sleep_schedule_enabled: cfg.sleep_schedule_enabled ?? false,
       display_orientation: cfg.display_orientation ?? deviceConfig.display_orientation,
       display_rotation_deg: cfg.display_rotation_deg ?? 180,
