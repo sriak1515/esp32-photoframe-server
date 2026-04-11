@@ -416,6 +416,24 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 		}
 	}
 
+	// 5. Config Sync: push config payload if server has newer config
+	if deviceFound && device.ConfigLastUpdated > 0 {
+		deviceConfigTS := int64(0)
+		if tsStr := c.Request().Header.Get("X-Config-Last-Updated"); tsStr != "" {
+			if ts, err := strconv.ParseInt(tsStr, 10, 64); err == nil {
+				deviceConfigTS = ts
+			}
+		}
+		if device.ConfigLastUpdated > deviceConfigTS {
+			payload := buildConfigPayload(&device)
+			if payload != "" {
+				c.Response().Header().Set("X-Config-Payload", payload)
+				log.Printf("Config sync: pushing config to device (server=%d, device=%d)",
+					device.ConfigLastUpdated, deviceConfigTS)
+			}
+		}
+	}
+
 	// Set Content-Length header
 	c.Response().Header().Set("Content-Length", fmt.Sprintf("%d", len(processedBytes)))
 
@@ -424,6 +442,170 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 		contentType = "image/png"
 	}
 	return c.Blob(http.StatusOK, contentType, processedBytes)
+}
+
+// SyncDeviceConfig handles device config sync.
+// The device POSTs its current config; the server stores it and returns its own
+// config if it's newer.
+// POST /api/device-config/sync
+func (h *ImageHandler) SyncDeviceConfig(c echo.Context) error {
+	// Identify device using same logic as ServeImage
+	var device model.Device
+	deviceFound := false
+
+	if devID, ok := c.Get("device_id").(uint); ok && devID > 0 {
+		if err := h.db.First(&device, devID).Error; err == nil {
+			deviceFound = true
+		}
+	}
+	if !deviceFound {
+		if hostname := c.Request().Header.Get("X-Hostname"); hostname != "" {
+			if err := h.db.Where("host = ?", hostname).First(&device).Error; err == nil {
+				deviceFound = true
+			}
+		}
+	}
+	if !deviceFound {
+		clientIP := c.RealIP()
+		if err := h.db.Where("host = ?", clientIP).First(&device).Error; err == nil {
+			deviceFound = true
+		}
+	}
+
+	if !deviceFound {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "device not found"})
+	}
+
+	// Parse request body: { "config": {...}, "processing_settings": {...}, "color_palette": {...}, "config_last_updated": 123 }
+	var req struct {
+		Config             json.RawMessage `json:"config"`
+		ProcessingSettings json.RawMessage `json:"processing_settings"`
+		ColorPalette       json.RawMessage `json:"color_palette"`
+		ConfigLastUpdated  int64           `json:"config_last_updated"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	// Store device's config in database
+	updates := map[string]interface{}{}
+	if len(req.Config) > 0 {
+		updates["device_config"] = string(req.Config)
+	}
+	if len(req.ProcessingSettings) > 0 {
+		updates["device_processing_settings"] = string(req.ProcessingSettings)
+	}
+	if len(req.ColorPalette) > 0 {
+		updates["device_color_palette"] = string(req.ColorPalette)
+	}
+	if req.ConfigLastUpdated > 0 {
+		updates["config_last_updated"] = req.ConfigLastUpdated
+	}
+
+	if len(updates) > 0 {
+		h.db.Model(&device).Updates(updates)
+	}
+
+	// Return server's config if it's newer
+	resp := map[string]interface{}{
+		"status":              "synced",
+		"config_last_updated": device.ConfigLastUpdated,
+	}
+
+	return c.JSON(http.StatusOK, resp)
+}
+
+// UpdateDeviceConfig updates the server-side device config (called from web UI).
+// PUT /api/devices/:id/config
+func (h *ImageHandler) UpdateDeviceConfig(c echo.Context) error {
+	id, _ := strconv.Atoi(c.Param("id"))
+
+	var device model.Device
+	if err := h.db.First(&device, uint(id)).Error; err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "device not found"})
+	}
+
+	var req struct {
+		Config             json.RawMessage `json:"config"`
+		ProcessingSettings json.RawMessage `json:"processing_settings"`
+		ColorPalette       json.RawMessage `json:"color_palette"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	updates := map[string]interface{}{
+		"config_last_updated": time.Now().Unix(),
+	}
+	if len(req.Config) > 0 {
+		updates["device_config"] = string(req.Config)
+	}
+	if len(req.ProcessingSettings) > 0 {
+		updates["device_processing_settings"] = string(req.ProcessingSettings)
+	}
+	if len(req.ColorPalette) > 0 {
+		updates["device_color_palette"] = string(req.ColorPalette)
+	}
+
+	h.db.Model(&device).Updates(updates)
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"status":              "updated",
+		"config_last_updated": updates["config_last_updated"],
+	})
+}
+
+// GetDeviceConfig returns the server-side device config.
+// GET /api/devices/:id/config
+func (h *ImageHandler) GetDeviceConfig(c echo.Context) error {
+	id, _ := strconv.Atoi(c.Param("id"))
+
+	var device model.Device
+	if err := h.db.First(&device, uint(id)).Error; err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "device not found"})
+	}
+
+	resp := map[string]interface{}{
+		"config_last_updated": device.ConfigLastUpdated,
+	}
+
+	if device.DeviceConfig != "" && device.DeviceConfig != "{}" {
+		resp["config"] = json.RawMessage(device.DeviceConfig)
+	}
+	if device.DeviceProcessingSettings != "" && device.DeviceProcessingSettings != "{}" {
+		resp["processing_settings"] = json.RawMessage(device.DeviceProcessingSettings)
+	}
+	if device.DeviceColorPalette != "" && device.DeviceColorPalette != "{}" {
+		resp["color_palette"] = json.RawMessage(device.DeviceColorPalette)
+	}
+
+	return c.JSON(http.StatusOK, resp)
+}
+
+// buildConfigPayload builds the X-Config-Payload JSON from device's stored config.
+// Returns empty string if there's nothing to send.
+func buildConfigPayload(device *model.Device) string {
+	payload := map[string]json.RawMessage{}
+
+	if device.DeviceConfig != "" && device.DeviceConfig != "{}" {
+		payload["config"] = json.RawMessage(device.DeviceConfig)
+	}
+	if device.DeviceProcessingSettings != "" && device.DeviceProcessingSettings != "{}" {
+		payload["processing_settings"] = json.RawMessage(device.DeviceProcessingSettings)
+	}
+	if device.DeviceColorPalette != "" && device.DeviceColorPalette != "{}" {
+		payload["color_palette"] = json.RawMessage(device.DeviceColorPalette)
+	}
+
+	if len(payload) == 0 {
+		return ""
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 func (h *ImageHandler) GetServedImageThumbnail(c echo.Context) error {

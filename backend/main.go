@@ -276,6 +276,9 @@ func main() {
 	// Let's protect main image endpoint.
 	e.GET("/served-image-thumbnail/:id", ih.GetServedImageThumbnail)
 
+	// Device Config Sync (Protected - device token or session auth)
+	e.POST("/api/device-config/sync", ih.SyncDeviceConfig, authMiddleware)
+
 	// Protected API Routes
 	// 1. Protected API Group
 	protectedApi := e.Group("/api", authMiddleware)
@@ -290,6 +293,8 @@ func main() {
 	protectedApi.DELETE("/devices/:id", deviceHandler.DeleteDevice)
 	protectedApi.POST("/devices/:id/push", deviceHandler.PushToDevice)
 	protectedApi.POST("/devices/:id/configure-source", deviceHandler.ConfigureDeviceSource)
+	protectedApi.GET("/devices/:id/config", ih.GetDeviceConfig)
+	protectedApi.PUT("/devices/:id/config", ih.UpdateDeviceConfig)
 
 	// Device Tokens (Protected)
 	protectedApi.POST("/auth/tokens", ah.GenerateDeviceToken)

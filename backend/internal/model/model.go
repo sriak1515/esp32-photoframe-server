@@ -74,7 +74,12 @@ type Device struct {
 	ShowCalendar       bool      `json:"show_calendar"`
 	CalendarID         string    `json:"calendar_id"` // Google Calendar ID (per-device)
 	DateFormat         string    `json:"date_format"` // Go time format string, empty = default "Mon, Jan 02"
-	CreatedAt          time.Time `json:"created_at"`
+	// Remote config sync fields (JSON blobs synced from/to device)
+	DeviceConfig             string `json:"device_config" gorm:"default:'{}'"`
+	DeviceProcessingSettings string `json:"device_processing_settings" gorm:"default:'{}'"`
+	DeviceColorPalette       string `json:"device_color_palette" gorm:"default:'{}'"`
+	ConfigLastUpdated        int64  `json:"config_last_updated" gorm:"default:0"`
+	CreatedAt                time.Time `json:"created_at"`
 }
 
 const (
