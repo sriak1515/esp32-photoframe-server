@@ -1171,7 +1171,7 @@
                           <v-col cols="12" md="6">
                             <v-select
                               v-model="deviceConfig.display_orientation"
-                              :items="[{ title: 'Landscape', value: 'landscape' }, { title: 'Portrait', value: 'portrait' }]"
+                              :items="orientationOptions"
                               label="Display Orientation"
                               variant="outlined"
                               density="compact"
@@ -2076,6 +2076,17 @@ const devicePalette = reactive<Record<string, { r: number; g: number; b: number 
   red: { r: 135, g: 19, b: 0 },
   blue: { r: 5, g: 64, b: 158 },
   green: { r: 39, g: 102, b: 60 },
+});
+
+const orientationOptions = computed(() => {
+  const w = editingDevice.width || 800;
+  const h = editingDevice.height || 480;
+  const wide = Math.max(w, h);
+  const narrow = Math.min(w, h);
+  return [
+    { title: `Landscape (${wide}\u00d7${narrow})`, value: 'landscape' },
+    { title: `Portrait (${narrow}\u00d7${wide})`, value: 'portrait' },
+  ];
 });
 
 const rotateIntervalOptions = [
