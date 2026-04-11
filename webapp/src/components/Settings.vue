@@ -1130,6 +1130,9 @@
                     <v-tab value="general">General</v-tab>
                     <v-tab value="autoRotate">Auto Rotate</v-tab>
                     <v-tab value="power">Power</v-tab>
+                    <v-tab value="homeAssistant">Home Assistant</v-tab>
+                    <v-tab value="processing">Processing</v-tab>
+                    <v-tab value="palette">Palette</v-tab>
                   </v-tabs>
                   <v-card-text style="min-height: 400px">
                     <v-tabs-window v-model="deviceDialogTab">
@@ -1430,6 +1433,99 @@
                           WiFi is only active during image fetch.
                         </v-alert>
                       </v-tabs-window-item>
+
+                      <!-- Home Assistant Tab -->
+                      <v-tabs-window-item value="homeAssistant">
+                        <v-text-field
+                          v-model="deviceConfig.ha_url"
+                          label="Home Assistant URL"
+                          variant="outlined"
+                          density="compact"
+                          class="mt-2"
+                          hint="e.g., http://homeassistant.local:8123"
+                          persistent-hint
+                          placeholder="http://homeassistant.local:8123"
+                        />
+                      </v-tabs-window-item>
+
+                      <!-- Processing Tab -->
+                      <v-tabs-window-item value="processing">
+                        <div class="mt-2">
+                          <v-slider v-model="deviceProcessing.exposure" label="Exposure" :min="0.5" :max="2" :step="0.05" thumb-label hide-details class="mb-2" />
+                          <v-slider v-model="deviceProcessing.saturation" label="Saturation" :min="0" :max="2" :step="0.05" thumb-label hide-details class="mb-2" />
+                          <v-slider v-model="deviceProcessing.contrast" label="Contrast" :min="0.5" :max="2" :step="0.05" thumb-label hide-details class="mb-2" />
+                          <v-slider v-model="deviceProcessing.strength" label="Strength" :min="0" :max="1" :step="0.05" thumb-label hide-details class="mb-2" />
+                          <v-slider v-model="deviceProcessing.shadowBoost" label="Shadow Boost" :min="0" :max="1" :step="0.05" thumb-label hide-details class="mb-2" />
+                          <v-slider v-model="deviceProcessing.highlightCompress" label="Highlight Compress" :min="0" :max="1" :step="0.05" thumb-label hide-details class="mb-2" />
+                          <v-slider v-model="deviceProcessing.midpoint" label="Midpoint" :min="0" :max="1" :step="0.05" thumb-label hide-details class="mb-4" />
+                          <v-select
+                            v-model="deviceProcessing.toneMode"
+                            :items="[{ title: 'S-Curve', value: 'scurve' }, { title: 'Contrast', value: 'contrast' }]"
+                            label="Tone Mode"
+                            variant="outlined"
+                            density="compact"
+                            hide-details
+                            class="mb-3"
+                          />
+                          <v-select
+                            v-model="deviceProcessing.colorMethod"
+                            :items="[{ title: 'RGB', value: 'rgb' }, { title: 'LAB', value: 'lab' }]"
+                            label="Color Method"
+                            variant="outlined"
+                            density="compact"
+                            hide-details
+                            class="mb-3"
+                          />
+                          <v-select
+                            v-model="deviceProcessing.ditherAlgorithm"
+                            :items="[
+                              { title: 'Floyd-Steinberg', value: 'floyd-steinberg' },
+                              { title: 'Stucki', value: 'stucki' },
+                              { title: 'Burkes', value: 'burkes' },
+                              { title: 'Sierra', value: 'sierra' },
+                            ]"
+                            label="Dither Algorithm"
+                            variant="outlined"
+                            density="compact"
+                            hide-details
+                            class="mb-3"
+                          />
+                          <v-checkbox
+                            v-model="deviceProcessing.compressDynamicRange"
+                            label="Compress Dynamic Range"
+                            color="primary"
+                            density="compact"
+                            hide-details
+                          />
+                        </div>
+                      </v-tabs-window-item>
+
+                      <!-- Palette Tab -->
+                      <v-tabs-window-item value="palette">
+                        <div class="mt-2">
+                          <div v-for="colorName in paletteColors" :key="colorName" class="d-flex align-center ga-3 mb-2">
+                            <span class="text-capitalize" style="width: 60px">{{ colorName }}</span>
+                            <v-text-field
+                              v-model.number="devicePalette[colorName].r"
+                              label="R" type="number" :min="0" :max="255"
+                              variant="outlined" density="compact" hide-details style="max-width: 80px"
+                            />
+                            <v-text-field
+                              v-model.number="devicePalette[colorName].g"
+                              label="G" type="number" :min="0" :max="255"
+                              variant="outlined" density="compact" hide-details style="max-width: 80px"
+                            />
+                            <v-text-field
+                              v-model.number="devicePalette[colorName].b"
+                              label="B" type="number" :min="0" :max="255"
+                              variant="outlined" density="compact" hide-details style="max-width: 80px"
+                            />
+                            <div
+                              :style="{ backgroundColor: `rgb(${devicePalette[colorName].r},${devicePalette[colorName].g},${devicePalette[colorName].b})`, width: '24px', height: '24px', borderRadius: '4px', border: '1px solid #ccc' }"
+                            ></div>
+                          </div>
+                        </div>
+                      </v-tabs-window-item>
                     </v-tabs-window>
                   </v-card-text>
                   <v-card-actions>
@@ -1665,6 +1761,33 @@ const deviceConfig = reactive<Record<string, any>>({
   sleep_end_time: '07:00',
   display_orientation: 'landscape',
   deep_sleep_enabled: true,
+  ha_url: '',
+});
+
+// Device processing settings (synced remotely)
+const deviceProcessing = reactive({
+  exposure: 1.0,
+  saturation: 1.0,
+  toneMode: 'contrast',
+  contrast: 1.0,
+  strength: 0.5,
+  shadowBoost: 0.0,
+  highlightCompress: 0.0,
+  midpoint: 0.5,
+  colorMethod: 'rgb',
+  ditherAlgorithm: 'floyd-steinberg',
+  compressDynamicRange: true,
+});
+
+// Device color palette (synced remotely)
+const paletteColors = ['black', 'white', 'yellow', 'red', 'blue', 'green'] as const;
+const devicePalette = reactive<Record<string, { r: number; g: number; b: number }>>({
+  black: { r: 2, g: 2, b: 2 },
+  white: { r: 190, g: 200, b: 200 },
+  yellow: { r: 205, g: 202, b: 0 },
+  red: { r: 135, g: 19, b: 0 },
+  blue: { r: 5, g: 64, b: 158 },
+  green: { r: 39, g: 102, b: 60 },
 });
 
 const rotateIntervalOptions = [
@@ -1682,7 +1805,10 @@ const rotateIntervalOptions = [
 const loadDeviceConfig = async (deviceId: number) => {
   try {
     const data = await getDeviceConfig(deviceId);
-    const cfg = data.config ? (typeof data.config === 'string' ? JSON.parse(data.config) : data.config) : {};
+    const parse = (v: any) => (typeof v === 'string' && v !== '{}' ? JSON.parse(v) : v) || {};
+
+    // Config
+    const cfg = parse(data.config);
     Object.assign(deviceConfig, {
       auto_rotate: cfg.auto_rotate ?? false,
       rotate_interval: cfg.rotate_interval ?? 3600,
@@ -1692,11 +1818,38 @@ const loadDeviceConfig = async (deviceId: number) => {
       sleep_schedule_enabled: cfg.sleep_schedule_enabled ?? false,
       display_orientation: cfg.display_orientation ?? deviceConfig.display_orientation,
       deep_sleep_enabled: cfg.deep_sleep_enabled ?? true,
+      ha_url: cfg.ha_url ?? '',
     });
     const startMin = cfg.sleep_schedule_start ?? 1380;
     deviceConfig.sleep_start_time = `${String(Math.floor(startMin / 60)).padStart(2, '0')}:${String(startMin % 60).padStart(2, '0')}`;
     const endMin = cfg.sleep_schedule_end ?? 420;
     deviceConfig.sleep_end_time = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+
+    // Processing settings
+    const proc = parse(data.processing_settings);
+    if (Object.keys(proc).length > 0) {
+      Object.assign(deviceProcessing, {
+        exposure: proc.exposure ?? 1.0,
+        saturation: proc.saturation ?? 1.0,
+        toneMode: proc.toneMode ?? 'contrast',
+        contrast: proc.contrast ?? 1.0,
+        strength: proc.strength ?? 0.5,
+        shadowBoost: proc.shadowBoost ?? 0.0,
+        highlightCompress: proc.highlightCompress ?? 0.0,
+        midpoint: proc.midpoint ?? 0.5,
+        colorMethod: proc.colorMethod ?? 'rgb',
+        ditherAlgorithm: proc.ditherAlgorithm ?? 'floyd-steinberg',
+        compressDynamicRange: proc.compressDynamicRange ?? true,
+      });
+    }
+
+    // Color palette
+    const pal = parse(data.color_palette);
+    for (const color of paletteColors) {
+      if (pal[color]) {
+        devicePalette[color] = { r: pal[color].r ?? 0, g: pal[color].g ?? 0, b: pal[color].b ?? 0 };
+      }
+    }
   } catch {
     // No config saved yet, use defaults
   }
@@ -1980,7 +2133,7 @@ const saveDevice = async () => {
         editingDevice.date_format || ''
       );
 
-      // Save device remote config
+      // Save device remote config (config + processing + palette)
       const [startH, startM] = deviceConfig.sleep_start_time.split(':').map(Number);
       const [endH, endM] = deviceConfig.sleep_end_time.split(':').map(Number);
       await updateDeviceConfig(editingDevice.id, {
@@ -1995,7 +2148,10 @@ const saveDevice = async () => {
           sleep_schedule_end: endH * 60 + endM,
           display_orientation: deviceConfig.display_orientation,
           deep_sleep_enabled: deviceConfig.deep_sleep_enabled,
+          ha_url: deviceConfig.ha_url,
         },
+        processing_settings: { ...deviceProcessing },
+        color_palette: { ...devicePalette },
       });
       showMessage('Device saved. Config changes sync on next image fetch.');
     }
