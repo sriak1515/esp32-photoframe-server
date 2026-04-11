@@ -2109,6 +2109,23 @@ watch(
   }
 );
 
+// Auto-fill weather coordinates from first device that has them
+watch(
+  () => editingDevice.show_weather,
+  (enabled) => {
+    if (!enabled) return;
+    // Only fill if lat/lon are empty
+    if (editingDevice.weather_lat && editingDevice.weather_lon) return;
+    const donor = availableDevices.value.find(
+      (d: Device) => d.show_weather && d.weather_lat && d.weather_lon && d.id !== editingDevice.id
+    );
+    if (donor) {
+      editingDevice.weather_lat = donor.weather_lat;
+      editingDevice.weather_lon = donor.weather_lon;
+    }
+  }
+);
+
 const orientationOptions = computed(() => {
   const w = editingDevice.width || 800;
   const h = editingDevice.height || 480;
