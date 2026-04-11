@@ -2499,7 +2499,7 @@ const saveDevice = async () => {
         timezone = m === 0 ? `UTC${sign}${h}` : `UTC${sign}${h}:${String(m).padStart(2, '0')}`;
       }
 
-      await updateDeviceConfig(editingDevice.id, {
+      const result = await updateDeviceConfig(editingDevice.id, {
         config: {
           auto_rotate: deviceConfig.auto_rotate,
           rotate_interval: deviceConfig.rotate_interval,
@@ -2522,7 +2522,11 @@ const saveDevice = async () => {
         processing_settings: { ...deviceProcessing },
         color_palette: { ...devicePalette },
       });
-      showMessage('Device saved. Config changes sync on next image fetch.');
+      if (result.push_result === 'synced') {
+        showMessage('Device saved and config pushed to device.');
+      } else {
+        showMessage('Device saved. Device is offline — config will sync on next image fetch.');
+      }
     }
     await loadDevices();
     showEditDeviceDialog.value = false;

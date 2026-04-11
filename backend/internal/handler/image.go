@@ -549,8 +549,21 @@ func (h *ImageHandler) UpdateDeviceConfig(c echo.Context) error {
 
 	h.db.Model(&device).Updates(updates)
 
+	// Attempt to push config to device directly
+	pushResult := "synced"
+	if device.Host != "" && len(req.Config) > 0 {
+		var configMap map[string]interface{}
+		if json.Unmarshal(req.Config, &configMap) == nil {
+			if err := photoframe.NewClient(device.Host).PushConfig(configMap); err != nil {
+				log.Printf("Could not push config to device %s: %v (will sync on next image fetch)", device.Host, err)
+				pushResult = "offline"
+			}
+		}
+	}
+
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"status":              "updated",
+		"push_result":         pushResult,
 		"config_last_updated": updates["config_last_updated"],
 	})
 }
