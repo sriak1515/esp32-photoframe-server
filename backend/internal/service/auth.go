@@ -145,12 +145,35 @@ func (s *AuthService) GenerateDeviceToken(userID uint, username string, name str
 }
 
 func (s *AuthService) GetOrGenerateDeviceToken(userID uint, username string, name string, deviceID *uint) (string, error) {
-	// Check for existing key with this name and revoke it to ensure 1:1 mapping and freshness
+	// Look for existing key for this device
 	var apiKey model.APIKey
-	if err := s.db.Where("user_id = ? AND name = ?", userID, name).First(&apiKey).Error; err == nil {
-		// Key exists. Delete it so we can create a fresh one
-		s.db.Delete(&apiKey)
+	query := s.db.Where("user_id = ?", userID)
+	if deviceID != nil {
+		query = query.Where("device_id = ?", *deviceID)
+	} else {
+		query = query.Where("name = ?", name)
 	}
+	if err := query.First(&apiKey).Error; err == nil {
+		// Reuse existing key — regenerate JWT from it
+		var devID uint
+		if apiKey.DeviceID != nil {
+			devID = *apiKey.DeviceID
+		}
+		claims := JWTClaims{
+			UserID:   userID,
+			Username: username,
+			KeyID:    apiKey.ID,
+			DeviceID: devID,
+			RegisteredClaims: jwt.RegisteredClaims{
+				ExpiresAt: jwt.NewNumericDate(time.Now().Add(87600 * time.Hour)),
+				IssuedAt:  jwt.NewNumericDate(time.Now()),
+				Subject:   "device",
+			},
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		return token.SignedString(s.jwtSecret)
+	}
+	// No existing key — create a new one
 	return s.GenerateDeviceToken(userID, username, name, deviceID)
 }
 
