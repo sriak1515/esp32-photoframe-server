@@ -1456,7 +1456,27 @@
 
                       <!-- Processing Tab (matches device webapp ProcessingControls) -->
                       <v-tabs-window-item value="processing">
-                        <v-row class="mt-2">
+                        <v-row class="mt-1">
+                          <v-col cols="12">
+                            <v-card variant="outlined" class="mb-2">
+                              <v-card-subtitle class="pt-3">Processing Preset</v-card-subtitle>
+                              <v-card-text>
+                                <v-btn-toggle
+                                  v-model="processingPreset"
+                                  mandatory
+                                  color="primary"
+                                  variant="outlined"
+                                  @update:model-value="applyProcessingPreset"
+                                >
+                                  <v-btn v-for="p in processingPresetOptions" :key="p.value" :value="p.value">
+                                    {{ p.title }}
+                                  </v-btn>
+                                </v-btn-toggle>
+                              </v-card-text>
+                            </v-card>
+                          </v-col>
+                        </v-row>
+                        <v-row>
                           <v-col cols="12" md="4">
                             <v-select
                               v-model="deviceProcessing.ditherAlgorithm"
@@ -1934,6 +1954,71 @@ const deviceProcessing = reactive({
   compressDynamicRange: true,
 });
 
+// Processing presets (hardcoded from epaper-image-convert presets.js)
+const processingPreset = ref('custom');
+const processingPresetOptions = [
+  { value: 'balanced', title: 'Balanced (Default)' },
+  { value: 'dynamic', title: 'Dynamic' },
+  { value: 'vivid', title: 'Vivid' },
+  { value: 'soft', title: 'Soft' },
+  { value: 'grayscale', title: 'Grayscale' },
+  { value: 'custom', title: 'Custom' },
+];
+const processingPresets: Record<string, Record<string, any>> = {
+  balanced: {
+    exposure: 1.0, saturation: 1.0, toneMode: 'contrast', contrast: 1.0,
+    colorMethod: 'rgb', ditherAlgorithm: 'floyd-steinberg', compressDynamicRange: true,
+    strength: 0.9, shadowBoost: 0.0, highlightCompress: 1.5, midpoint: 0.5,
+  },
+  dynamic: {
+    exposure: 1.0, saturation: 1.3, toneMode: 'scurve', contrast: 1.0,
+    strength: 0.9, shadowBoost: 0.0, highlightCompress: 1.5, midpoint: 0.5,
+    colorMethod: 'rgb', ditherAlgorithm: 'floyd-steinberg', compressDynamicRange: false,
+  },
+  vivid: {
+    exposure: 1.1, saturation: 1.6, toneMode: 'scurve', contrast: 1.0,
+    strength: 0.7, shadowBoost: 0.1, highlightCompress: 1.3, midpoint: 0.5,
+    colorMethod: 'rgb', ditherAlgorithm: 'floyd-steinberg', compressDynamicRange: false,
+  },
+  soft: {
+    exposure: 1.0, saturation: 1.1, toneMode: 'contrast', contrast: 0.9,
+    colorMethod: 'rgb', ditherAlgorithm: 'stucki', compressDynamicRange: true,
+    strength: 0.9, shadowBoost: 0.0, highlightCompress: 1.5, midpoint: 0.5,
+  },
+  grayscale: {
+    exposure: 1.0, saturation: 0.0, toneMode: 'scurve', contrast: 1.0,
+    strength: 0.8, shadowBoost: 0.1, highlightCompress: 1.4, midpoint: 0.5,
+    colorMethod: 'lab', ditherAlgorithm: 'floyd-steinberg', compressDynamicRange: true,
+  },
+};
+
+const applyProcessingPreset = (name: string) => {
+  const preset = processingPresets[name];
+  if (preset) {
+    Object.assign(deviceProcessing, preset);
+  }
+  // 'custom' just keeps current values
+};
+
+// Detect current preset on load
+const detectProcessingPreset = () => {
+  const keys = ['exposure', 'saturation', 'toneMode', 'contrast', 'colorMethod',
+    'ditherAlgorithm', 'compressDynamicRange', 'strength', 'shadowBoost',
+    'highlightCompress', 'midpoint'] as const;
+  for (const [name, preset] of Object.entries(processingPresets)) {
+    const matches = keys.every((k) => {
+      const pv = preset[k];
+      const dv = (deviceProcessing as any)[k];
+      return pv === dv;
+    });
+    if (matches) {
+      processingPreset.value = name;
+      return;
+    }
+  }
+  processingPreset.value = 'custom';
+};
+
 // Device color palette (synced remotely)
 const paletteColors = ['black', 'white', 'yellow', 'red', 'blue', 'green'] as const;
 const devicePalette = reactive<Record<string, { r: number; g: number; b: number }>>({
@@ -2013,6 +2098,7 @@ const loadDeviceConfig = async (deviceId: number) => {
         compressDynamicRange: proc.compressDynamicRange ?? true,
       });
     }
+    detectProcessingPreset();
 
     // Color palette
     const pal = parse(data.color_palette);
