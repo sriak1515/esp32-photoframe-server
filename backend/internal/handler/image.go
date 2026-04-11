@@ -40,6 +40,7 @@ type ImageHandlerDeps struct {
 	AIGen          *service.AIGenerationService
 	Weather        *weather.Client
 	Calendar       *gcalendar.Client
+	Auth           *service.AuthService
 	DB             *gorm.DB
 	DataDir        string
 }
@@ -55,6 +56,7 @@ type ImageHandler struct {
 	aiGen          *service.AIGenerationService
 	weather        *weather.Client
 	calendar       *gcalendar.Client
+	auth           *service.AuthService
 	db             *gorm.DB
 	dataDir        string
 }
@@ -71,6 +73,7 @@ func NewImageHandler(deps ImageHandlerDeps) *ImageHandler {
 		aiGen:          deps.AIGen,
 		weather:        deps.Weather,
 		calendar:       deps.Calendar,
+		auth:           deps.Auth,
 		db:             deps.DB,
 		dataDir:        deps.DataDir,
 	}
@@ -549,15 +552,34 @@ func (h *ImageHandler) UpdateDeviceConfig(c echo.Context) error {
 
 	h.db.Model(&device).Updates(updates)
 
+	// If image_url points to this server, ensure a device token is included
+	var configMap map[string]interface{}
+	if len(req.Config) > 0 {
+		json.Unmarshal(req.Config, &configMap)
+	}
+	if configMap != nil {
+		if imageURL, ok := configMap["image_url"].(string); ok && strings.Contains(imageURL, "/image/") {
+			// Generate or reuse a device token
+			if userID, ok := c.Get("user_id").(uint); ok {
+				username, _ := c.Get("username").(string)
+				token, err := h.auth.GetOrGenerateDeviceToken(userID, username, device.Name, &device.ID)
+				if err == nil {
+					configMap["access_token"] = token
+					// Re-serialize with token for DB storage
+					updated, _ := json.Marshal(configMap)
+					updates["device_config"] = string(updated)
+					h.db.Model(&device).Update("device_config", string(updated))
+				}
+			}
+		}
+	}
+
 	// Attempt to push config to device directly
 	pushResult := "synced"
-	if device.Host != "" && len(req.Config) > 0 {
-		var configMap map[string]interface{}
-		if json.Unmarshal(req.Config, &configMap) == nil {
-			if err := photoframe.NewClient(device.Host).PushConfig(configMap); err != nil {
-				log.Printf("Could not push config to device %s: %v (will sync on next image fetch)", device.Host, err)
-				pushResult = "offline"
-			}
+	if device.Host != "" && configMap != nil {
+		if err := photoframe.NewClient(device.Host).PushConfig(configMap); err != nil {
+			log.Printf("Could not push config to device %s: %v (will sync on next image fetch)", device.Host, err)
+			pushResult = "offline"
 		}
 	}
 

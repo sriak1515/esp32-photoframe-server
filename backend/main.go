@@ -197,7 +197,7 @@ func main() {
 		Calendar:       calendarClient,
 		CalendarGoogle: googleCalendarClient,
 	})
-	deviceHandler := handler.NewDeviceHandler(deviceService, synologyService, immichService, authService, settingsService, database)
+	deviceHandler := handler.NewDeviceHandler(deviceService, synologyService, immichService, database)
 
 	// Initialize Telegram Service
 	// Pass deviceService as Pusher
@@ -228,6 +228,7 @@ func main() {
 		AIGen:          aiGenerationService,
 		Weather:        weatherClient,
 		Calendar:       calendarClient,
+		Auth:           authService,
 		DB:             database,
 		DataDir:        dataDir,
 	})
@@ -287,7 +288,6 @@ func main() {
 	protectedApi.PUT("/devices/:id", deviceHandler.UpdateDevice)
 	protectedApi.DELETE("/devices/:id", deviceHandler.DeleteDevice)
 	protectedApi.POST("/devices/:id/push", deviceHandler.PushToDevice)
-	protectedApi.POST("/devices/:id/configure-source", deviceHandler.ConfigureDeviceSource)
 	protectedApi.GET("/devices/:id/config", ih.GetDeviceConfig)
 	protectedApi.PUT("/devices/:id/config", ih.UpdateDeviceConfig)
 

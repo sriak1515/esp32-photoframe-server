@@ -2,7 +2,6 @@ package handler
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -20,133 +19,19 @@ type DeviceHandler struct {
 	deviceService   *service.DeviceService
 	synologyService *service.SynologyService
 	immichService   *service.ImmichService
-	authService     *service.AuthService
-	settingsService *service.SettingsService
 	db              *gorm.DB
 }
 
-func NewDeviceHandler(deviceService *service.DeviceService, synologyService *service.SynologyService, immichService *service.ImmichService, authService *service.AuthService, settingsService *service.SettingsService, db *gorm.DB) *DeviceHandler {
+func NewDeviceHandler(deviceService *service.DeviceService, synologyService *service.SynologyService, immichService *service.ImmichService, db *gorm.DB) *DeviceHandler {
 	return &DeviceHandler{
 		deviceService:   deviceService,
 		synologyService: synologyService,
 		immichService:   immichService,
-		authService:     authService,
-		settingsService: settingsService,
 		db:              db,
 	}
 }
 
 // ... existing methods ... (List, Add, Update, Delete, Push)
-
-// POST /api/devices/:id/configure-source
-func (h *DeviceHandler) ConfigureDeviceSource(c echo.Context) error {
-	id, _ := strconv.Atoi(c.Param("id"))
-	deviceID := uint(id)
-
-	var req struct {
-		Source string `json:"source"`
-	}
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
-	}
-
-	if req.Source == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "source required"})
-	}
-
-	// 1. Determine Image URL
-	// For device access, always use the direct add-on port, not the ingress URL
-	// ESP32 devices access the server directly, not through Home Assistant ingress
-	hostname := c.Request().Host
-	// Strip port if present (e.g., homeassistant.local:8123 -> homeassistant.local)
-	if idx := strings.Index(hostname, ":"); idx != -1 {
-		hostname = hostname[:idx]
-	}
-	// Use direct add-on port from environment variable (defaults to 9607)
-	addonPort := os.Getenv("ADDON_PORT")
-	if addonPort == "" {
-		addonPort = "9607"
-	}
-	host := fmt.Sprintf("%s:%s", hostname, addonPort)
-
-	var imageURL string
-	switch req.Source {
-	case model.SourceURLProxy:
-		imageURL = fmt.Sprintf("http://%s/image/url_proxy", host)
-	case model.SourceGooglePhotos:
-		imageURL = fmt.Sprintf("http://%s/image/google_photos", host)
-	case model.SourceSynologyPhotos:
-		imageURL = fmt.Sprintf("http://%s/image/synology_photos", host)
-	case model.SourceAIGeneration:
-		imageURL = fmt.Sprintf("http://%s/image/ai_generation", host)
-	case model.SourceImmich:
-		imageURL = fmt.Sprintf("http://%s/image/immich", host)
-	case model.SourceTelegram: // Added telegram source
-		imageURL = fmt.Sprintf("http://%s/image/telegram", host)
-		// Update Telegram Settings (Append if not exists)
-		existingIDs, _ := h.settingsService.Get("telegram_target_device_id")
-		newID := fmt.Sprintf("%d", deviceID)
-
-		// Check duplicates
-		ids := strings.Split(existingIDs, ",")
-		found := false
-		for _, id := range ids {
-			if strings.TrimSpace(id) == newID {
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			if existingIDs != "" {
-				existingIDs += "," + newID
-			} else {
-				existingIDs = newID
-			}
-			if err := h.settingsService.Set("telegram_target_device_id", existingIDs); err != nil {
-				log.Printf("Failed to set telegram_target_device_id: %v", err)
-			}
-		}
-
-		if err := h.settingsService.Set("telegram_push_enabled", "true"); err != nil {
-			log.Printf("Failed to set telegram_push_enabled: %v", err)
-		}
-	default:
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid source"})
-	}
-
-	configUpdate := map[string]interface{}{
-		"image_url":     imageURL,
-		"rotation_mode": "url",
-		"auto_rotate":   true,
-	}
-
-	// Generate Token
-	userID, ok := c.Get("user_id").(uint)
-	if !ok {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-	}
-	username := c.Get("username").(string)
-
-	// Get Device Name for Token Name
-	var device model.Device
-	if err := h.db.First(&device, deviceID).Error; err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "device not found"})
-	}
-
-	token, err := h.authService.GetOrGenerateDeviceToken(userID, username, device.Name, &device.ID)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to generate token: " + err.Error()})
-	}
-	configUpdate["access_token"] = token
-
-	// Push Config
-	if err := h.deviceService.ConfigureDevice(deviceID, configUpdate); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to push config: " + err.Error()})
-	}
-
-	return c.JSON(http.StatusOK, map[string]string{"status": "configured", "url": imageURL})
-}
 
 // GET /api/devices
 func (h *DeviceHandler) ListDevices(c echo.Context) error {
@@ -202,19 +87,19 @@ func (h *DeviceHandler) UpdateDevice(c echo.Context) error {
 		Height        int     `json:"height"`
 		Orientation   string  `json:"orientation"`
 		EnableCollage bool    `json:"enable_collage"`
-		ShowDate           bool    `json:"show_date"`
-		ShowPhotoDate      bool    `json:"show_photo_date"`
-		ShowWeather        bool    `json:"show_weather"`
-		WeatherLat         float64 `json:"weather_lat"`
-		WeatherLon         float64 `json:"weather_lon"`
-		AIProvider         string  `json:"ai_provider"`
-		AIModel            string  `json:"ai_model"`
-		AIPrompt           string  `json:"ai_prompt"`
-		Layout             string  `json:"layout"`
-		DisplayMode        string  `json:"display_mode"`
-		ShowCalendar       bool    `json:"show_calendar"`
-		CalendarID         string  `json:"calendar_id"`
-		DateFormat         string  `json:"date_format"`
+		ShowDate      bool    `json:"show_date"`
+		ShowPhotoDate bool    `json:"show_photo_date"`
+		ShowWeather   bool    `json:"show_weather"`
+		WeatherLat    float64 `json:"weather_lat"`
+		WeatherLon    float64 `json:"weather_lon"`
+		AIProvider    string  `json:"ai_provider"`
+		AIModel       string  `json:"ai_model"`
+		AIPrompt      string  `json:"ai_prompt"`
+		Layout        string  `json:"layout"`
+		DisplayMode   string  `json:"display_mode"`
+		ShowCalendar  bool    `json:"show_calendar"`
+		CalendarID    string  `json:"calendar_id"`
+		DateFormat    string  `json:"date_format"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})

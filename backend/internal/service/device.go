@@ -116,20 +116,20 @@ func (s *DeviceService) AddDevice(host string, enableCollage, showDate, showPhot
 	}
 
 	device := &model.Device{
-		Name:               name,
-		Host:               host,
-		Width:              width,
-		Height:             height,
-		Orientation:        orientation,
-		BoardName:          boardName,
-		EnableCollage:      enableCollage,
-		ShowDate:           showDate,
-		ShowPhotoDate:      showPhotoDate,
-		ShowWeather:        showWeather,
-		WeatherLat:         weatherLat,
-		WeatherLon:         weatherLon,
-		Layout:             layout,
-		DisplayMode:        displayMode,
+		Name:                     name,
+		Host:                     host,
+		Width:                    width,
+		Height:                   height,
+		Orientation:              orientation,
+		BoardName:                boardName,
+		EnableCollage:            enableCollage,
+		ShowDate:                 showDate,
+		ShowPhotoDate:            showPhotoDate,
+		ShowWeather:              showWeather,
+		WeatherLat:               weatherLat,
+		WeatherLon:               weatherLon,
+		Layout:                   layout,
+		DisplayMode:              displayMode,
 		ShowCalendar:             showCalendar,
 		CalendarID:               calendarID,
 		DateFormat:               dateFormat,
@@ -261,14 +261,6 @@ func (s *DeviceService) PushToDevice(deviceID uint, imagePath string) error {
 	}
 
 	return nil
-}
-
-func (s *DeviceService) ConfigureDevice(deviceID uint, config map[string]interface{}) error {
-	var device model.Device
-	if err := s.db.First(&device, deviceID).Error; err != nil {
-		return errors.New("device not found")
-	}
-	return photoframe.NewClient(device.Host).PushConfig(config)
 }
 
 // PushToHost processes an image file and pushes it to a target host

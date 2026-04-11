@@ -1080,7 +1080,11 @@
                 <tbody>
                   <tr v-for="device in availableDevices" :key="device.id">
                     <td>{{ device.name }}</td>
-                    <td>{{ device.board_name || `${device.width}x${device.height}` }}</td>
+                    <td>
+                      {{
+                        device.board_name || `${device.width}x${device.height}`
+                      }}
+                    </td>
                     <td>
                       {{ device.host }}
                     </td>
@@ -1112,10 +1116,22 @@
               </v-table>
 
               <!-- Edit Device Dialog (tabbed like device webapp) -->
-              <v-dialog v-model="showEditDeviceDialog" max-width="1100px" scrollable>
+              <v-dialog
+                v-model="showEditDeviceDialog"
+                max-width="1100px"
+                scrollable
+              >
                 <v-card>
-                  <v-card-title>{{ isAddingDevice ? 'Add Device' : editingDevice.name || 'Edit Device' }}</v-card-title>
-                  <v-tabs v-if="!isAddingDevice" v-model="deviceDialogTab" density="compact">
+                  <v-card-title>{{
+                    isAddingDevice
+                      ? 'Add Device'
+                      : editingDevice.name || 'Edit Device'
+                  }}</v-card-title>
+                  <v-tabs
+                    v-if="!isAddingDevice"
+                    v-model="deviceDialogTab"
+                    density="compact"
+                  >
                     <v-tab value="general">General</v-tab>
                     <v-tab value="autoRotate">Auto Rotate</v-tab>
                     <v-tab value="power">Power</v-tab>
@@ -1124,7 +1140,11 @@
                     <v-tab value="ai">AI Generation</v-tab>
                     <v-tab value="palette">Palette</v-tab>
                   </v-tabs>
-                  <v-card-text :style="isAddingDevice ? '' : 'height: 455px; overflow-y: auto'">
+                  <v-card-text
+                    :style="
+                      isAddingDevice ? '' : 'height: 455px; overflow-y: auto'
+                    "
+                  >
                     <!-- Add Device: just host input -->
                     <div v-if="isAddingDevice" class="mt-2">
                       <v-text-field
@@ -1138,7 +1158,10 @@
                     </div>
 
                     <!-- Edit Device: full tabbed UI -->
-                    <v-tabs-window v-if="!isAddingDevice" v-model="deviceDialogTab">
+                    <v-tabs-window
+                      v-if="!isAddingDevice"
+                      v-model="deviceDialogTab"
+                    >
                       <!-- General Tab -->
                       <v-tabs-window-item value="general">
                         <v-row class="mt-1">
@@ -1176,7 +1199,12 @@
                           <v-col cols="12" md="6">
                             <v-select
                               v-model="deviceConfig.display_rotation_deg"
-                              :items="[{ title: '0°', value: 0 }, { title: '90°', value: 90 }, { title: '180°', value: 180 }, { title: '270°', value: 270 }]"
+                              :items="[
+                                { title: '0°', value: 0 },
+                                { title: '90°', value: 90 },
+                                { title: '180°', value: 180 },
+                                { title: '270°', value: 270 },
+                              ]"
                               label="Display Rotation (deg)"
                               variant="outlined"
                               density="compact"
@@ -1188,7 +1216,10 @@
                             <v-text-field
                               v-model.number="deviceConfig.timezone_offset"
                               label="Timezone (UTC offset)"
-                              type="number" :min="-12" :max="14" :step="0.5"
+                              type="number"
+                              :min="-12"
+                              :max="14"
+                              :step="0.5"
                               variant="outlined"
                               density="compact"
                               hint="e.g., -8 for PST, +1 for CET, +8 for CST"
@@ -1239,7 +1270,10 @@
                           />
                           <v-select
                             v-model="deviceConfig.rotation_mode"
-                            :items="[{ title: 'Local Storage', value: 'storage' }, { title: 'URL', value: 'url' }]"
+                            :items="[
+                              { title: 'Local Storage', value: 'storage' },
+                              { title: 'URL', value: 'url' },
+                            ]"
                             label="Rotation Mode"
                             variant="outlined"
                             density="compact"
@@ -1258,30 +1292,18 @@
                               :disabled="!deviceConfig.auto_rotate"
                             />
 
-                            <!-- This server: source dropdown + bind -->
-                            <v-row v-if="useThisServer" dense class="mb-2 ml-8">
-                              <v-col>
-                                <v-select
-                                  v-model="selectedSource"
-                                  :items="sourceOptions"
-                                  label="Image Source"
-                                  variant="outlined"
-                                  density="compact"
-                                  hide-details
-                                  :disabled="!deviceConfig.auto_rotate"
-                                ></v-select>
-                              </v-col>
-                              <v-col cols="auto" class="d-flex align-center">
-                                <v-btn
-                                  color="primary"
-                                  variant="tonal"
-                                  size="small"
-                                  :loading="isBinding"
-                                  :disabled="!deviceConfig.auto_rotate"
-                                  @click="bindDeviceSource"
-                                >Bind</v-btn>
-                              </v-col>
-                            </v-row>
+                            <!-- This server: source dropdown -->
+                            <v-select
+                              v-if="useThisServer"
+                              v-model="selectedSource"
+                              :items="sourceOptions"
+                              label="Image Source"
+                              variant="outlined"
+                              density="compact"
+                              hide-details
+                              class="mb-2 ml-8"
+                              :disabled="!deviceConfig.auto_rotate"
+                            ></v-select>
 
                             <!-- Custom URL -->
                             <v-text-field
@@ -1316,7 +1338,10 @@
                           hide-details
                           class="mb-2"
                         />
-                        <div v-if="deviceConfig.sleep_schedule_enabled" class="ml-10">
+                        <div
+                          v-if="deviceConfig.sleep_schedule_enabled"
+                          class="ml-10"
+                        >
                           <v-row dense>
                             <v-col cols="6">
                               <v-text-field
@@ -1344,15 +1369,23 @@
                         <v-divider class="my-4" />
 
                         <!-- Display Settings section header -->
-                        <div class="text-body-1 font-weight-medium mb-4">Display Settings</div>
+                        <div class="text-body-1 font-weight-medium mb-4">
+                          Display Settings
+                        </div>
                         <div class="ml-10">
                           <v-row dense>
                             <v-col cols="12" md="6">
                               <v-select
                                 v-model="editingDevice.display_mode"
                                 :items="[
-                                  { title: 'Cover (fill, may crop)', value: 'cover' },
-                                  { title: 'Fit (show entire photo)', value: 'fit' },
+                                  {
+                                    title: 'Cover (fill, may crop)',
+                                    value: 'cover',
+                                  },
+                                  {
+                                    title: 'Fit (show entire photo)',
+                                    value: 'fit',
+                                  },
                                 ]"
                                 label="Photo Display Mode"
                                 variant="outlined"
@@ -1373,7 +1406,9 @@
                         <v-divider class="my-4" />
 
                         <!-- Overlay section -->
-                        <div class="text-body-1 font-weight-medium mb-4">Overlay</div>
+                        <div class="text-body-1 font-weight-medium mb-4">
+                          Overlay
+                        </div>
                         <div class="ml-10">
                           <div class="d-flex ga-4 flex-wrap">
                             <v-checkbox
@@ -1407,7 +1442,11 @@
                             hide-details
                             class="mt-3"
                           ></v-select>
-                          <v-row v-if="editingDevice.show_weather" dense class="mt-3">
+                          <v-row
+                            v-if="editingDevice.show_weather"
+                            dense
+                            class="mt-3"
+                          >
                             <v-col cols="6">
                               <v-text-field
                                 v-model.number="editingDevice.weather_lat"
@@ -1430,7 +1469,9 @@
                             </v-col>
                           </v-row>
                           <v-tooltip
-                            :disabled="form.google_calendar_connected === 'true'"
+                            :disabled="
+                              form.google_calendar_connected === 'true'
+                            "
                             location="top"
                             text="Connect Google Calendar in Data Sources first"
                           >
@@ -1442,13 +1483,18 @@
                                   color="primary"
                                   hide-details
                                   class="mt-2 mb-1"
-                                  :disabled="form.google_calendar_connected !== 'true'"
+                                  :disabled="
+                                    form.google_calendar_connected !== 'true'
+                                  "
                                 ></v-checkbox>
                               </div>
                             </template>
                           </v-tooltip>
                           <v-select
-                            v-if="editingDevice.show_calendar && form.google_calendar_connected === 'true'"
+                            v-if="
+                              editingDevice.show_calendar &&
+                              form.google_calendar_connected === 'true'
+                            "
                             v-model="editingDevice.calendar_id"
                             :items="calendars"
                             item-title="summary"
@@ -1464,24 +1510,46 @@
                         <v-divider class="my-4" />
 
                         <!-- Layout section -->
-                        <div class="text-body-1 font-weight-medium mb-4">Layout</div>
+                        <div class="text-body-1 font-weight-medium mb-4">
+                          Layout
+                        </div>
                         <div class="ml-10">
                           <div class="d-flex flex-wrap ga-3 mb-3">
                             <v-card
                               v-for="opt in filteredLayoutOptions"
                               :key="opt.value"
-                              :variant="editingDevice.layout === opt.value ? 'outlined' : 'flat'"
-                              :color="editingDevice.layout === opt.value ? 'primary' : undefined"
+                              :variant="
+                                editingDevice.layout === opt.value
+                                  ? 'outlined'
+                                  : 'flat'
+                              "
+                              :color="
+                                editingDevice.layout === opt.value
+                                  ? 'primary'
+                                  : undefined
+                              "
                               class="layout-preview-card pa-2 text-center"
                               style="width: 100px; cursor: pointer"
                               @click="editingDevice.layout = opt.value"
                             >
-                              <div class="layout-preview mb-1" v-html="getLayoutPreviewSvg(opt.value, editingDevice.orientation || 'landscape')"></div>
-                              <div class="text-caption" style="line-height: 1.2">{{ opt.title }}</div>
+                              <div
+                                class="layout-preview mb-1"
+                                v-html="
+                                  getLayoutPreviewSvg(
+                                    opt.value,
+                                    editingDevice.orientation || 'landscape'
+                                  )
+                                "
+                              ></div>
+                              <div
+                                class="text-caption"
+                                style="line-height: 1.2"
+                              >
+                                {{ opt.title }}
+                              </div>
                             </v-card>
                           </div>
                         </div>
-
                       </v-tabs-window-item>
 
                       <!-- Power Tab -->
@@ -1493,10 +1561,16 @@
                           class="mt-2"
                           hide-details
                         />
-                        <v-alert type="info" variant="tonal" density="compact" class="mt-4">
+                        <v-alert
+                          type="info"
+                          variant="tonal"
+                          density="compact"
+                          class="mt-4"
+                        >
                           <strong>Power Consumption Notice</strong><br />
-                          When deep sleep is enabled, the device sleeps between image rotations to save power.
-                          WiFi is only active during image fetch.
+                          When deep sleep is enabled, the device sleeps between
+                          image rotations to save power. WiFi is only active
+                          during image fetch.
                         </v-alert>
                       </v-tabs-window-item>
 
@@ -1519,7 +1593,9 @@
                         <v-row class="mt-1">
                           <v-col cols="12">
                             <v-card variant="outlined" class="mb-2">
-                              <v-card-subtitle class="pt-3">Processing Preset</v-card-subtitle>
+                              <v-card-subtitle class="pt-3"
+                                >Processing Preset</v-card-subtitle
+                              >
                               <v-card-text>
                                 <v-btn-toggle
                                   v-model="processingPreset"
@@ -1528,7 +1604,11 @@
                                   variant="outlined"
                                   @update:model-value="applyProcessingPreset"
                                 >
-                                  <v-btn v-for="p in processingPresetOptions" :key="p.value" :value="p.value">
+                                  <v-btn
+                                    v-for="p in processingPresetOptions"
+                                    :key="p.value"
+                                    :value="p.value"
+                                  >
                                     {{ p.title }}
                                   </v-btn>
                                 </v-btn-toggle>
@@ -1551,7 +1631,10 @@
                           <v-col cols="12" md="4">
                             <v-select
                               v-model="deviceProcessing.colorMethod"
-                              :items="[{ title: 'RGB', value: 'rgb' }, { title: 'LAB', value: 'lab' }]"
+                              :items="[
+                                { title: 'RGB', value: 'rgb' },
+                                { title: 'LAB', value: 'lab' },
+                              ]"
                               label="Color Matching"
                               variant="outlined"
                               density="compact"
@@ -1563,24 +1646,34 @@
                           <v-col cols="12" md="4">
                             <v-slider
                               v-model="deviceProcessing.exposure"
-                              :min="0.5" :max="2.0" :step="0.01"
+                              :min="0.5"
+                              :max="2.0"
+                              :step="0.01"
                               label="Exposure"
-                              thumb-label color="primary"
+                              thumb-label
+                              color="primary"
                             >
                               <template #append>
-                                <span class="text-body-2">{{ deviceProcessing.exposure.toFixed(2) }}</span>
+                                <span class="text-body-2">{{
+                                  deviceProcessing.exposure.toFixed(2)
+                                }}</span>
                               </template>
                             </v-slider>
                           </v-col>
                           <v-col cols="12" md="4">
                             <v-slider
                               v-model="deviceProcessing.saturation"
-                              :min="0.5" :max="2.0" :step="0.01"
+                              :min="0.5"
+                              :max="2.0"
+                              :step="0.01"
                               label="Saturation"
-                              thumb-label color="primary"
+                              thumb-label
+                              color="primary"
                             >
                               <template #append>
-                                <span class="text-body-2">{{ deviceProcessing.saturation.toFixed(2) }}</span>
+                                <span class="text-body-2">{{
+                                  deviceProcessing.saturation.toFixed(2)
+                                }}</span>
                               </template>
                             </v-slider>
                           </v-col>
@@ -1599,49 +1692,117 @@
                           <v-col cols="12" md="4">
                             <v-select
                               v-model="deviceProcessing.toneMode"
-                              :items="[{ title: 'Contrast', value: 'contrast' }, { title: 'S-Curve', value: 'scurve' }]"
+                              :items="[
+                                { title: 'Contrast', value: 'contrast' },
+                                { title: 'S-Curve', value: 'scurve' },
+                              ]"
                               label="Tone Mapping"
                               variant="outlined"
                               density="compact"
                             />
                           </v-col>
-                          <v-col v-if="deviceProcessing.toneMode !== 'scurve'" cols="12" md="4">
+                          <v-col
+                            v-if="deviceProcessing.toneMode !== 'scurve'"
+                            cols="12"
+                            md="4"
+                          >
                             <v-slider
                               v-model="deviceProcessing.contrast"
-                              :min="0.5" :max="2.0" :step="0.01"
+                              :min="0.5"
+                              :max="2.0"
+                              :step="0.01"
                               label="Contrast"
-                              thumb-label color="primary"
+                              thumb-label
+                              color="primary"
                             >
                               <template #append>
-                                <span class="text-body-2">{{ deviceProcessing.contrast.toFixed(2) }}</span>
+                                <span class="text-body-2">{{
+                                  deviceProcessing.contrast.toFixed(2)
+                                }}</span>
                               </template>
                             </v-slider>
                           </v-col>
                         </v-row>
 
                         <v-expand-transition>
-                          <v-card v-if="deviceProcessing.toneMode === 'scurve'" variant="tonal" class="mt-2">
-                            <v-card-subtitle class="pt-3">S-Curve Parameters</v-card-subtitle>
+                          <v-card
+                            v-if="deviceProcessing.toneMode === 'scurve'"
+                            variant="tonal"
+                            class="mt-2"
+                          >
+                            <v-card-subtitle class="pt-3"
+                              >S-Curve Parameters</v-card-subtitle
+                            >
                             <v-card-text>
                               <v-row>
                                 <v-col cols="12" md="6">
-                                  <v-slider v-model="deviceProcessing.strength" :min="0" :max="1" :step="0.01" label="Strength" thumb-label color="primary">
-                                    <template #append><span class="text-body-2">{{ deviceProcessing.strength.toFixed(2) }}</span></template>
+                                  <v-slider
+                                    v-model="deviceProcessing.strength"
+                                    :min="0"
+                                    :max="1"
+                                    :step="0.01"
+                                    label="Strength"
+                                    thumb-label
+                                    color="primary"
+                                  >
+                                    <template #append
+                                      ><span class="text-body-2">{{
+                                        deviceProcessing.strength.toFixed(2)
+                                      }}</span></template
+                                    >
                                   </v-slider>
                                 </v-col>
                                 <v-col cols="12" md="6">
-                                  <v-slider v-model="deviceProcessing.shadowBoost" :min="0" :max="1" :step="0.01" label="Shadow Boost" thumb-label color="primary">
-                                    <template #append><span class="text-body-2">{{ deviceProcessing.shadowBoost.toFixed(2) }}</span></template>
+                                  <v-slider
+                                    v-model="deviceProcessing.shadowBoost"
+                                    :min="0"
+                                    :max="1"
+                                    :step="0.01"
+                                    label="Shadow Boost"
+                                    thumb-label
+                                    color="primary"
+                                  >
+                                    <template #append
+                                      ><span class="text-body-2">{{
+                                        deviceProcessing.shadowBoost.toFixed(2)
+                                      }}</span></template
+                                    >
                                   </v-slider>
                                 </v-col>
                                 <v-col cols="12" md="6">
-                                  <v-slider v-model="deviceProcessing.highlightCompress" :min="0.5" :max="5" :step="0.01" label="Highlight Compress" thumb-label color="primary">
-                                    <template #append><span class="text-body-2">{{ deviceProcessing.highlightCompress.toFixed(2) }}</span></template>
+                                  <v-slider
+                                    v-model="deviceProcessing.highlightCompress"
+                                    :min="0.5"
+                                    :max="5"
+                                    :step="0.01"
+                                    label="Highlight Compress"
+                                    thumb-label
+                                    color="primary"
+                                  >
+                                    <template #append
+                                      ><span class="text-body-2">{{
+                                        deviceProcessing.highlightCompress.toFixed(
+                                          2
+                                        )
+                                      }}</span></template
+                                    >
                                   </v-slider>
                                 </v-col>
                                 <v-col cols="12" md="6">
-                                  <v-slider v-model="deviceProcessing.midpoint" :min="0.3" :max="0.7" :step="0.01" label="Midpoint" thumb-label color="primary">
-                                    <template #append><span class="text-body-2">{{ deviceProcessing.midpoint.toFixed(2) }}</span></template>
+                                  <v-slider
+                                    v-model="deviceProcessing.midpoint"
+                                    :min="0.3"
+                                    :max="0.7"
+                                    :step="0.01"
+                                    label="Midpoint"
+                                    thumb-label
+                                    color="primary"
+                                  >
+                                    <template #append
+                                      ><span class="text-body-2">{{
+                                        deviceProcessing.midpoint.toFixed(2)
+                                      }}</span></template
+                                    >
                                   </v-slider>
                                 </v-col>
                               </v-row>
@@ -1652,9 +1813,16 @@
 
                       <!-- AI Generation Tab -->
                       <v-tabs-window-item value="ai">
-                        <v-alert type="info" variant="tonal" density="compact" class="mt-2 mb-4">
-                          API keys are stored on the device for client-side AI image generation.
-                          Server-side AI provider/model/prompt are used when the image source is set to AI Generation.
+                        <v-alert
+                          type="info"
+                          variant="tonal"
+                          density="compact"
+                          class="mt-2 mb-4"
+                        >
+                          API keys are stored on the device for client-side AI
+                          image generation. Server-side AI provider/model/prompt
+                          are used when the image source is set to AI
+                          Generation.
                         </v-alert>
 
                         <v-text-field
@@ -1675,7 +1843,9 @@
                         />
 
                         <v-divider class="mb-4" />
-                        <div class="text-subtitle-2 mb-2">Server-Side AI Generation</div>
+                        <div class="text-subtitle-2 mb-2">
+                          Server-Side AI Generation
+                        </div>
 
                         <v-select
                           v-model="editingDevice.ai_provider"
@@ -1693,7 +1863,9 @@
                         <v-select
                           v-if="editingDevice.ai_provider"
                           v-model="editingDevice.ai_model"
-                          :items="aiModelOptionsForProvider(editingDevice.ai_provider)"
+                          :items="
+                            aiModelOptionsForProvider(editingDevice.ai_provider)
+                          "
                           label="Model"
                           variant="outlined"
                           density="compact"
@@ -1715,7 +1887,13 @@
                       <!-- Palette Tab (matches device webapp PaletteCalibration) -->
                       <v-tabs-window-item value="palette">
                         <v-row class="mt-2">
-                          <v-col v-for="colorName in paletteColors" :key="colorName" cols="6" md="4" lg="2">
+                          <v-col
+                            v-for="colorName in paletteColors"
+                            :key="colorName"
+                            cols="6"
+                            md="4"
+                            lg="2"
+                          >
                             <v-card variant="outlined">
                               <div
                                 class="color-swatch"
@@ -1724,34 +1902,61 @@
                                 }"
                               />
                               <v-card-text class="pa-2">
-                                <div class="text-subtitle-2 text-capitalize mb-2">{{ colorName }}</div>
+                                <div
+                                  class="text-subtitle-2 text-capitalize mb-2"
+                                >
+                                  {{ colorName }}
+                                </div>
                                 <v-text-field
                                   v-model.number="devicePalette[colorName].r"
-                                  label="R" type="number" :min="0" :max="255"
-                                  density="compact" variant="outlined" class="mb-1"
+                                  label="R"
+                                  type="number"
+                                  :min="0"
+                                  :max="255"
+                                  density="compact"
+                                  variant="outlined"
+                                  class="mb-1"
                                 />
                                 <v-text-field
                                   v-model.number="devicePalette[colorName].g"
-                                  label="G" type="number" :min="0" :max="255"
-                                  density="compact" variant="outlined" class="mb-1"
+                                  label="G"
+                                  type="number"
+                                  :min="0"
+                                  :max="255"
+                                  density="compact"
+                                  variant="outlined"
+                                  class="mb-1"
                                 />
                                 <v-text-field
                                   v-model.number="devicePalette[colorName].b"
-                                  label="B" type="number" :min="0" :max="255"
-                                  density="compact" variant="outlined"
+                                  label="B"
+                                  type="number"
+                                  :min="0"
+                                  :max="255"
+                                  density="compact"
+                                  variant="outlined"
                                 />
                               </v-card-text>
                             </v-card>
                           </v-col>
                         </v-row>
                         <v-btn
-                          variant="text" color="error" size="small" class="mt-2"
-                          @click="Object.assign(devicePalette, {
-                            black: { r: 2, g: 2, b: 2 }, white: { r: 190, g: 200, b: 200 },
-                            yellow: { r: 205, g: 202, b: 0 }, red: { r: 135, g: 19, b: 0 },
-                            blue: { r: 5, g: 64, b: 158 }, green: { r: 39, g: 102, b: 60 },
-                          })"
-                        >Reset to Defaults</v-btn>
+                          variant="text"
+                          color="error"
+                          size="small"
+                          class="mt-2"
+                          @click="
+                            Object.assign(devicePalette, {
+                              black: { r: 2, g: 2, b: 2 },
+                              white: { r: 190, g: 200, b: 200 },
+                              yellow: { r: 205, g: 202, b: 0 },
+                              red: { r: 135, g: 19, b: 0 },
+                              blue: { r: 5, g: 64, b: 158 },
+                              green: { r: 39, g: 102, b: 60 },
+                            })
+                          "
+                          >Reset to Defaults</v-btn
+                        >
                       </v-tabs-window-item>
                     </v-tabs-window>
                   </v-card-text>
@@ -1768,10 +1973,18 @@
                       Sync from Device
                     </v-btn>
                     <v-spacer></v-spacer>
-                    <v-btn color="grey" variant="text" @click="showEditDeviceDialog = false">Cancel</v-btn>
-                    <v-btn color="primary" @click="saveDevice" :loading="savingDeviceConfig">{{
-                      isAddingDevice ? 'Add' : 'Save'
-                    }}</v-btn>
+                    <v-btn
+                      color="grey"
+                      variant="text"
+                      @click="showEditDeviceDialog = false"
+                      >Cancel</v-btn
+                    >
+                    <v-btn
+                      color="primary"
+                      @click="saveDevice"
+                      :loading="savingDeviceConfig"
+                      >{{ isAddingDevice ? 'Add' : 'Save' }}</v-btn
+                    >
                   </v-card-actions>
                 </v-card>
               </v-dialog>
@@ -1816,7 +2029,6 @@ import {
   updateURLSource,
   listURLSources,
   deleteURLSource,
-  configureDeviceSource,
   getDeviceConfig,
   updateDeviceConfig,
   updateAccount,
@@ -1851,30 +2063,6 @@ const sourceOptions = [
   { title: 'URL Proxy', value: 'url_proxy' },
   { title: 'AI Generation', value: 'ai_generation' },
 ];
-const isBinding = ref(false);
-
-const bindDeviceSource = async () => {
-  if (!editingDevice.id) return;
-  isBinding.value = true;
-  try {
-    const res = await configureDeviceSource(
-      editingDevice.id,
-      selectedSource.value
-    );
-    // Update local config with the new URL from the bind response
-    deviceConfig.image_url = res.url;
-    deviceConfig.rotation_mode = 'url';
-    deviceConfig.auto_rotate = true;
-    showMessage(`Image source bound: ${selectedSource.value}`);
-  } catch (e: any) {
-    showMessage(
-      'Failed to bind source: ' + (e.response?.data?.error || e.message),
-      true
-    );
-  } finally {
-    isBinding.value = false;
-  }
-};
 
 // URL Proxy State
 const urlSources = ref<any[]>([]); // Renamed from urlImages
@@ -2016,7 +2204,11 @@ const deviceProcessing = reactive({
 });
 
 // Processing presets from epaper-image-convert library
-import { getPresetOptions, getPreset, getDitherOptions } from '@aitjcize/epaper-image-convert';
+import {
+  getPresetOptions,
+  getPreset,
+  getDitherOptions,
+} from '@aitjcize/epaper-image-convert';
 
 const processingPreset = ref('custom');
 const processingPresetOptions = [
@@ -2041,9 +2233,17 @@ const applyProcessingPreset = (name: string) => {
 // Detect current preset on load
 // Match preset detection logic from device webapp: only compare keys present in the preset
 const presetKeys = [
-  'exposure', 'saturation', 'toneMode', 'contrast', 'strength',
-  'shadowBoost', 'highlightCompress', 'midpoint', 'colorMethod',
-  'ditherAlgorithm', 'compressDynamicRange',
+  'exposure',
+  'saturation',
+  'toneMode',
+  'contrast',
+  'strength',
+  'shadowBoost',
+  'highlightCompress',
+  'midpoint',
+  'colorMethod',
+  'ditherAlgorithm',
+  'compressDynamicRange',
 ];
 
 const detectProcessingPreset = () => {
@@ -2063,13 +2263,26 @@ const detectProcessingPreset = () => {
 };
 
 // Re-detect preset when processing params change
-watch(deviceProcessing, () => {
-  detectProcessingPreset();
-}, { deep: true });
+watch(
+  deviceProcessing,
+  () => {
+    detectProcessingPreset();
+  },
+  { deep: true }
+);
 
 // Device color palette (synced remotely)
-const paletteColors = ['black', 'white', 'yellow', 'red', 'blue', 'green'] as const;
-const devicePalette = reactive<Record<string, { r: number; g: number; b: number }>>({
+const paletteColors = [
+  'black',
+  'white',
+  'yellow',
+  'red',
+  'blue',
+  'green',
+] as const;
+const devicePalette = reactive<
+  Record<string, { r: number; g: number; b: number }>
+>({
   black: { r: 2, g: 2, b: 2 },
   white: { r: 190, g: 200, b: 200 },
   yellow: { r: 205, g: 202, b: 0 },
@@ -2115,7 +2328,11 @@ watch(
     // Only fill if lat/lon are empty
     if (editingDevice.weather_lat && editingDevice.weather_lon) return;
     const donor = availableDevices.value.find(
-      (d: Device) => d.show_weather && d.weather_lat && d.weather_lon && d.id !== editingDevice.id
+      (d: Device) =>
+        d.show_weather &&
+        d.weather_lat &&
+        d.weather_lon &&
+        d.id !== editingDevice.id
     );
     if (donor) {
       editingDevice.weather_lat = donor.weather_lat;
@@ -2150,7 +2367,8 @@ const rotateIntervalOptions = [
 const loadDeviceConfig = async (deviceId: number) => {
   try {
     const data = await getDeviceConfig(deviceId);
-    const parse = (v: any) => (typeof v === 'string' && v !== '{}' ? JSON.parse(v) : v) || {};
+    const parse = (v: any) =>
+      (typeof v === 'string' && v !== '{}' ? JSON.parse(v) : v) || {};
 
     // Config
     const cfg = parse(data.config);
@@ -2189,7 +2407,8 @@ const loadDeviceConfig = async (deviceId: number) => {
 
     Object.assign(deviceConfig, {
       sleep_schedule_enabled: cfg.sleep_schedule_enabled ?? false,
-      display_orientation: cfg.display_orientation ?? deviceConfig.display_orientation,
+      display_orientation:
+        cfg.display_orientation ?? deviceConfig.display_orientation,
       display_rotation_deg: cfg.display_rotation_deg ?? 180,
       deep_sleep_enabled: cfg.deep_sleep_enabled ?? true,
       ha_url: cfg.ha_url ?? '',
@@ -2237,7 +2456,11 @@ const loadDeviceConfig = async (deviceId: number) => {
     const pal = parse(data.color_palette);
     for (const color of paletteColors) {
       if (pal[color]) {
-        devicePalette[color] = { r: pal[color].r ?? 0, g: pal[color].g ?? 0, b: pal[color].b ?? 0 };
+        devicePalette[color] = {
+          r: pal[color].r ?? 0,
+          g: pal[color].g ?? 0,
+          b: pal[color].b ?? 0,
+        };
       }
     }
   } catch {
@@ -2251,8 +2474,11 @@ const syncFromDevice = async () => {
   try {
     await updateDevice(
       editingDevice.id,
-      editingDevice.name!, editingDevice.host!,
-      0, 0, '',
+      editingDevice.name!,
+      editingDevice.host!,
+      0,
+      0,
+      '',
       editingDevice.enable_collage!,
       editingDevice.show_date!,
       editingDevice.show_photo_date || false,
@@ -2269,13 +2495,18 @@ const syncFromDevice = async () => {
     );
     await loadDevices();
     // Re-load the updated device into the dialog
-    const updated = availableDevices.value.find((d: Device) => d.id === editingDevice.id);
+    const updated = availableDevices.value.find(
+      (d: Device) => d.id === editingDevice.id
+    );
     if (updated) Object.assign(editingDevice, updated);
     // Reload device config to reflect synced values
     await loadDeviceConfig(editingDevice.id!);
     showMessage('Settings synced from device');
   } catch (e: any) {
-    showMessage('Failed to sync: ' + (e.response?.data?.error || e.message), true);
+    showMessage(
+      'Failed to sync: ' + (e.response?.data?.error || e.message),
+      true
+    );
   } finally {
     syncingFromDevice.value = false;
   }
@@ -2439,19 +2670,39 @@ const isAddingDevice = ref(false);
 
 const openAddDeviceDialog = () => {
   Object.assign(editingDevice, {
-    id: undefined, name: '', host: '', width: 0, height: 0, orientation: '',
+    id: undefined,
+    name: '',
+    host: '',
+    width: 0,
+    height: 0,
+    orientation: '',
     enable_collage: false,
-    show_date: false, show_photo_date: false, show_weather: false,
-    weather_lat: null, weather_lon: null,
-    ai_provider: '', ai_model: '', ai_prompt: '',
-    layout: 'photo_overlay', display_mode: 'cover',
-    show_calendar: false, calendar_id: '', date_format: '',
+    show_date: false,
+    show_photo_date: false,
+    show_weather: false,
+    weather_lat: null,
+    weather_lon: null,
+    ai_provider: '',
+    ai_model: '',
+    ai_prompt: '',
+    layout: 'photo_overlay',
+    display_mode: 'cover',
+    show_calendar: false,
+    calendar_id: '',
+    date_format: '',
   });
   Object.assign(deviceConfig, {
-    auto_rotate: false, rotate_interval: 3600, auto_rotate_aligned: true,
-    rotation_mode: 'storage', image_url: '', save_downloaded_images: true,
-    sleep_schedule_enabled: false, sleep_start_time: '23:00', sleep_end_time: '07:00',
-    display_orientation: 'landscape', deep_sleep_enabled: true,
+    auto_rotate: false,
+    rotate_interval: 3600,
+    auto_rotate_aligned: true,
+    rotation_mode: 'storage',
+    image_url: '',
+    save_downloaded_images: true,
+    sleep_schedule_enabled: false,
+    sleep_start_time: '23:00',
+    sleep_end_time: '07:00',
+    display_orientation: 'landscape',
+    deep_sleep_enabled: true,
   });
   isAddingDevice.value = true;
   deviceDialogTab.value = 'general';
@@ -2476,9 +2727,11 @@ const saveDevice = async () => {
   }
   if (editingDevice.show_weather) {
     if (
-      editingDevice.weather_lat === null || editingDevice.weather_lat === undefined ||
+      editingDevice.weather_lat === null ||
+      editingDevice.weather_lat === undefined ||
       isNaN(editingDevice.weather_lat) ||
-      editingDevice.weather_lon === null || editingDevice.weather_lon === undefined ||
+      editingDevice.weather_lon === null ||
+      editingDevice.weather_lon === undefined ||
       isNaN(editingDevice.weather_lon)
     ) {
       showMessage('Latitude and Longitude are required for weather', true);
@@ -2505,7 +2758,9 @@ const saveDevice = async () => {
       await loadDevices();
       showMessage('Device added. Fetched settings from device.');
       // Re-open in edit mode with fetched config
-      const added = availableDevices.value.find((d: Device) => d.id === newDevice.id);
+      const added = availableDevices.value.find(
+        (d: Device) => d.id === newDevice.id
+      );
       if (added) {
         savingDeviceConfig.value = false;
         await editDevice(added);
@@ -2516,15 +2771,20 @@ const saveDevice = async () => {
       // Save server-side device fields
       await updateDevice(
         editingDevice.id,
-        editingDevice.name!, editingDevice.host!,
-        editingDevice.width!, editingDevice.height!,
+        editingDevice.name!,
+        editingDevice.host!,
+        editingDevice.width!,
+        editingDevice.height!,
         deviceConfig.display_orientation || editingDevice.orientation!,
         editingDevice.enable_collage!,
         editingDevice.show_date!,
         editingDevice.show_photo_date || false,
         editingDevice.show_weather!,
-        editingDevice.weather_lat || 0, editingDevice.weather_lon || 0,
-        editingDevice.ai_provider || '', editingDevice.ai_model || '', editingDevice.ai_prompt || '',
+        editingDevice.weather_lat || 0,
+        editingDevice.weather_lon || 0,
+        editingDevice.ai_provider || '',
+        editingDevice.ai_model || '',
+        editingDevice.ai_prompt || '',
         editingDevice.layout || 'photo_overlay',
         editingDevice.display_mode || 'cover',
         editingDevice.show_calendar || false,
@@ -2533,7 +2793,9 @@ const saveDevice = async () => {
       );
 
       // Save device remote config (config + processing + palette)
-      const [startH, startM] = deviceConfig.sleep_start_time.split(':').map(Number);
+      const [startH, startM] = deviceConfig.sleep_start_time
+        .split(':')
+        .map(Number);
       const [endH, endM] = deviceConfig.sleep_end_time.split(':').map(Number);
 
       // Convert UTC offset to POSIX timezone format (sign is inverted)
@@ -2544,7 +2806,17 @@ const saveDevice = async () => {
         const h = Math.floor(absOff);
         const m = Math.round((absOff - h) * 60);
         const sign = offsetVal > 0 ? '-' : '+';
-        timezone = m === 0 ? `UTC${sign}${h}` : `UTC${sign}${h}:${String(m).padStart(2, '0')}`;
+        timezone =
+          m === 0
+            ? `UTC${sign}${h}`
+            : `UTC${sign}${h}:${String(m).padStart(2, '0')}`;
+      }
+
+      // Compute image URL: use server URL if "use this server" is checked
+      let imageUrl = deviceConfig.image_url;
+      if (useThisServer.value && deviceConfig.rotation_mode === 'url') {
+        const origin = window.location.origin;
+        imageUrl = `${origin}/image/${selectedSource.value}`;
       }
 
       const result = await updateDeviceConfig(editingDevice.id, {
@@ -2554,7 +2826,7 @@ const saveDevice = async () => {
           rotate_interval: deviceConfig.rotate_interval,
           auto_rotate_aligned: deviceConfig.auto_rotate_aligned,
           rotation_mode: deviceConfig.rotation_mode,
-          image_url: deviceConfig.image_url,
+          image_url: imageUrl,
           save_downloaded_images: deviceConfig.save_downloaded_images,
           sleep_schedule_enabled: deviceConfig.sleep_schedule_enabled,
           sleep_schedule_start: startH * 60 + startM,
@@ -2574,13 +2846,18 @@ const saveDevice = async () => {
       if (result.push_result === 'synced') {
         showMessage('Device saved and config pushed to device.');
       } else {
-        showMessage('Device saved. Device is offline — config will sync on next image fetch.');
+        showMessage(
+          'Device saved. Device is offline — config will sync on next image fetch.'
+        );
       }
     }
     await loadDevices();
     showEditDeviceDialog.value = false;
   } catch (e: any) {
-    showMessage('Failed to save device: ' + (e.response?.data?.error || e.message), true);
+    showMessage(
+      'Failed to save device: ' + (e.response?.data?.error || e.message),
+      true
+    );
   } finally {
     savingDeviceConfig.value = false;
   }

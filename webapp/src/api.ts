@@ -160,13 +160,6 @@ export const pushToDevice = async (deviceID: number, imageID: number) => {
   return response.data;
 };
 
-export const configureDeviceSource = async (id: number, source: string) => {
-  const response = await api.post(`/devices/${id}/configure-source`, {
-    source,
-  });
-  return response.data;
-};
-
 export const getDeviceConfig = async (id: number) => {
   const response = await api.get(`/devices/${id}/config`);
   return response.data;
