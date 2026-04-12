@@ -79,7 +79,7 @@ var sharedHTTPClient = &http.Client{
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	},
-	Timeout: 10 * time.Second,
+	Timeout: 120 * time.Second,
 }
 
 type Client struct {
