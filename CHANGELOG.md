@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.7.0
+
+### Added
+- Remote device configuration: manage device settings from the server. The device dialog is now a tabbed UI matching the device webapp (General, Auto Rotate, Processing, Palette, Home Assistant), fetches live config from the device, and pushes changes back on Save with an offline fallback message.
+- Display orientation dropdown shows resolution (e.g., "Portrait 480×800")
+
+### Changed
+- Display mode "contain" renamed to "fit" for consistency
+- Image orientation detection unified across sources; orientation is passed to the CLI for device-aware processing
+- Bind flow simplified: image URL and token generated on Save (no separate Bind button)
+
+### Performance
+- Cache resolved IP on photoframe client and reuse clients across fetches
+- Use dns-sd for fast mDNS resolution on macOS
+- Composite index on `device_histories(device_id, served_at)`
+- Prune device_histories to 50 entries, remove unnecessary COUNT query
+
+### Fixed
+- Increase HTTP client timeout to 120s for image push operations
+- Reuse existing device token instead of revoking and regenerating when re-binding
+- Return 404 instead of 500 when no URL proxy sources are configured
+- Use `--ignore-scripts` for frontend npm install to skip canvas native build
+
 ## v1.6.1
 
 ### Added
