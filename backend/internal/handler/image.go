@@ -218,7 +218,7 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 		imgPath := filepath.Join(h.dataDir, "photos", "telegram_last.jpg")
 		f, fsErr := os.Open(imgPath)
 		if fsErr != nil {
-			img, err = h.fetchPlaceholder()
+			err = fsErr
 		} else {
 			defer f.Close()
 			img, _, err = image.Decode(f)
@@ -826,7 +826,7 @@ func (h *ImageHandler) resolvePath(path string) string {
 }
 
 // fetchRandomPhoto fetches a random photo from the given source, excluding
-// the given IDs. Falls back to ignoring exclusions, then to a placeholder.
+// the given IDs. Falls back to ignoring exclusions if no match is found.
 func (h *ImageHandler) fetchRandomPhoto(sourceFilter string, excludeIDs []uint, deviceID *uint) (image.Image, uint, error) {
 	query := h.db.Order("RANDOM()")
 
@@ -841,28 +841,24 @@ func (h *ImageHandler) fetchRandomPhoto(sourceFilter string, excludeIDs []uint, 
 
 	var item model.Image
 	if err := query.First(&item).Error; err != nil {
-		// Fallback: retry without exclusions
-		if len(excludeIDs) > 0 {
-			retryQuery := h.db.Order("RANDOM()")
-			retryQuery, earlyResult, retryErr := h.applySourceFilter(retryQuery, sourceFilter, deviceID)
-			if earlyResult != nil || retryErr != nil {
-				return earlyResult, 0, retryErr
-			}
-			if err := retryQuery.First(&item).Error; err != nil {
-				img, err := h.fetchPlaceholder()
-				return img, 0, err
-			}
-		} else {
-			img, err := h.fetchPlaceholder()
-			return img, 0, err
+		if len(excludeIDs) == 0 {
+			return nil, 0, err
+		}
+		// Retry without exclusions
+		retryQuery := h.db.Order("RANDOM()")
+		retryQuery, earlyResult, retryErr := h.applySourceFilter(retryQuery, sourceFilter, deviceID)
+		if earlyResult != nil || retryErr != nil {
+			return earlyResult, 0, retryErr
+		}
+		if err := retryQuery.First(&item).Error; err != nil {
+			return nil, 0, err
 		}
 	}
 
 	img, err := h.loadImageFromRecord(item)
 	if err != nil {
 		log.Printf("Warning: Failed to load image id=%d: %v", item.ID, err)
-		img, err := h.fetchPlaceholder()
-		return img, 0, err
+		return nil, 0, err
 	}
 	return img, item.ID, nil
 }
@@ -936,17 +932,6 @@ func (h *ImageHandler) loadImageFromRecord(item model.Image) (image.Image, error
 	defer f.Close()
 
 	img, _, err := image.Decode(f)
-	return img, err
-}
-
-func (h *ImageHandler) fetchPlaceholder() (image.Image, error) {
-	resp, err := http.Get("https://picsum.photos/800/480")
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	img, _, err := image.Decode(resp.Body)
 	return img, err
 }
 
