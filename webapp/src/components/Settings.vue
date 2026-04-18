@@ -1537,7 +1537,9 @@
                                 v-html="
                                   getLayoutPreviewSvg(
                                     opt.value,
-                                    deviceConfig.display_orientation || editingDevice.orientation || 'landscape'
+                                    deviceConfig.display_orientation ||
+                                      editingDevice.orientation ||
+                                      'landscape'
                                   )
                                 "
                               ></div>
@@ -2527,7 +2529,10 @@ const allLayoutOptions = [
 ];
 
 const filteredLayoutOptions = computed(() => {
-  const orientation = deviceConfig.display_orientation || editingDevice.orientation || 'landscape';
+  const orientation =
+    deviceConfig.display_orientation ||
+    editingDevice.orientation ||
+    'landscape';
   return allLayoutOptions.filter((opt) =>
     opt.orientations.includes(orientation)
   );
@@ -2812,11 +2817,13 @@ const saveDevice = async () => {
             : `UTC${sign}${h}:${String(m).padStart(2, '0')}`;
       }
 
-      // Compute image URL: use server URL if "use this server" is checked
+      // Compute image URL: use server URL if "use this server" is checked.
+      // getImageUrl() targets the direct add-on port, so the URL works when
+      // the ESP32 reaches the server straight (ingress port 8123 cannot serve
+      // /image/*).
       let imageUrl = deviceConfig.image_url;
       if (useThisServer.value && deviceConfig.rotation_mode === 'url') {
-        const origin = window.location.origin;
-        imageUrl = `${origin}/image/${selectedSource.value}`;
+        imageUrl = getImageUrl(selectedSource.value);
       }
 
       const result = await updateDeviceConfig(editingDevice.id, {
