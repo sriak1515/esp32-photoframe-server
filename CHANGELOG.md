@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.7.3
+
+### Fixed
+- Device image URL is now built against the add-on port (default `9607`, configurable via `VITE_ADDON_PORT`) instead of `window.location.origin`, so the URL works when the webapp is served through Home Assistant ingress (`:8123`) but the ESP32 reaches the server directly
+
+### Performance
+- Index the hot-path GORM queries that were doing sequential scans: `api_keys(user_id)` and `(user_id, device_id)` (token lookups on every device config save), `devices(host)` (LAN fallback identification on every image fetch), and `images(source)` / `(source, synology_photo_id)` / `(source, immich_asset_id)` (per-photo dedup during Synology and Immich sync)
+
 ## v1.7.1
 
 ### Added
