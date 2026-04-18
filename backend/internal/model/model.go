@@ -28,12 +28,12 @@ type Image struct {
 	Height          int            `json:"height"`
 	Orientation     string         `json:"orientation"` // "landscape", "portrait"
 	UserID          int64          `json:"user_id"`
-	Status          string         `json:"status"` // pending, shown
-	Source          string         `json:"source"` // "local", "google_photos", "synology_photos"
-	SynologyPhotoID int            `json:"synology_id"`
-	ThumbnailKey    string         `json:"thumbnail_key"`   // Cache key for Synology
-	ImmichAssetID   string         `json:"immich_asset_id"` // UUID for Immich assets
-	PhotoTakenAt    *time.Time     `json:"photo_taken_at"`  // Original photo creation/taken date
+	Status          string         `json:"status"`                                                                                                                      // pending, shown
+	Source          string         `gorm:"index:idx_images_source;index:idx_images_source_synology,priority:1;index:idx_images_source_immich,priority:1" json:"source"` // "local", "google_photos", "synology_photos"
+	SynologyPhotoID int            `gorm:"index:idx_images_source_synology,priority:2" json:"synology_id"`
+	ThumbnailKey    string         `json:"thumbnail_key"`                                                    // Cache key for Synology
+	ImmichAssetID   string         `gorm:"index:idx_images_source_immich,priority:2" json:"immich_asset_id"` // UUID for Immich assets
+	PhotoTakenAt    *time.Time     `json:"photo_taken_at"`                                                   // Original photo creation/taken date
 	CreatedAt       time.Time      `json:"created_at"`
 	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
 }
@@ -55,7 +55,7 @@ type GoogleCalendarAuth struct {
 type Device struct {
 	ID            uint    `gorm:"primaryKey" json:"id"`
 	Name          string  `json:"name"`
-	Host          string  `json:"host"` // IP or Hostname
+	Host          string  `gorm:"index" json:"host"` // IP or Hostname
 	Width         int     `json:"width"`
 	Height        int     `json:"height"`
 	Orientation   string  `json:"orientation"`
