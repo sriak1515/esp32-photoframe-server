@@ -278,13 +278,23 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 					ServedAt: time.Now(),
 				})
 			}
-			// Prune old history — keep only last 50 entries
-			h.db.Where("device_id = ? AND id NOT IN (?)", devID,
-				h.db.Model(&model.DeviceHistory{}).Select("id").
-					Where("device_id = ?", devID).
-					Order("served_at desc").
-					Limit(50),
-			).Delete(&model.DeviceHistory{})
+			// Prune old history — keep only last 50 entries.
+			// Find the served_at of the 51st-newest row and range-delete
+			// anything older. Both the cutoff lookup and the delete use the
+			// idx_device_histories_device_served composite index, so this
+			// stays O(log n) instead of the O(n) scan the previous
+			// "NOT IN (subquery)" form degraded into once a device's history
+			// grew past a few hundred rows.
+			var cutoffs []time.Time
+			if err := h.db.Model(&model.DeviceHistory{}).
+				Where("device_id = ?", devID).
+				Order("served_at desc").
+				Offset(50).
+				Limit(1).
+				Pluck("served_at", &cutoffs).Error; err == nil && len(cutoffs) > 0 {
+				h.db.Where("device_id = ? AND served_at < ?", devID, cutoffs[0]).
+					Delete(&model.DeviceHistory{})
+			}
 		}(device.ID, servedImageIDs)
 	}
 
