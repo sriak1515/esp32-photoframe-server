@@ -1,7 +1,16 @@
 <template>
   <v-app>
     <v-app-bar color="primary" density="compact">
-      <v-app-bar-title>ESP32 PhotoFrame Server</v-app-bar-title>
+      <template #prepend>
+        <v-img
+          src="/favicon.svg"
+          alt="PhotoFrame Server"
+          width="32"
+          height="32"
+          class="ml-2"
+        />
+      </template>
+      <v-app-bar-title class="ml-4">ESP32 PhotoFrame Server</v-app-bar-title>
       <template v-if="authStore.isLoggedIn" v-slot:append>
         <v-btn
           variant="text"
@@ -33,13 +42,6 @@
         </div>
       </v-container>
     </v-main>
-
-    <v-footer
-      app
-      class="text-center d-flex justify-center text-caption text-grey"
-    >
-      ESP32-S3 PhotoFrame Server
-    </v-footer>
   </v-app>
 </template>
 

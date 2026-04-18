@@ -357,7 +357,10 @@ func main() {
 	// 2. Serve root index.html
 	e.File("/", filepath.Join(staticDir, "index.html"))
 
-	// 3. SPA Fallback: Any other route not matched (api is already handled) goes to index.html
+	// 3. Serve favicon from the root of the static dir
+	e.File("/favicon.svg", filepath.Join(staticDir, "favicon.svg"))
+
+	// 4. SPA Fallback: Any other route not matched (api is already handled) goes to index.html
 	e.GET("/*", func(c echo.Context) error {
 		return c.File(filepath.Join(staticDir, "index.html"))
 	})
