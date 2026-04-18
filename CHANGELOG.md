@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.7.1
+
+### Added
+- Walnut photo-frame icon, used as both the favicon and a 32×32 prepend in the app-bar so the title bar reads as a branded header
+
+### Changed
+- New warm amber color palette: primary `#ce9160`, with matched-saturation error / info / success / warning (`#982f2f`, `#2f6398`, `#2f9852`, `#987e2f`)
+
+### Fixed
+- Image fetch failures propagate as errors instead of falling back to a picsum placeholder
+
 ## v1.7.0
 
 ### Added
