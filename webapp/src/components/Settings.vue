@@ -2618,13 +2618,12 @@ const aiModelOptionsForProvider = (provider: string | undefined) => {
       { title: 'GPT Image 1.5', value: 'gpt-image-1.5' },
       { title: 'GPT Image 1', value: 'gpt-image-1' },
       { title: 'GPT Image 1 Mini', value: 'gpt-image-1-mini' },
-      { title: 'DALL-E 3', value: 'dall-e-3' },
-      { title: 'DALL-E 2', value: 'dall-e-2' },
     ];
   } else if (provider === 'google') {
     return [
-      { title: 'Gemini 2.5 Flash Image', value: 'gemini-2.5-flash-image' },
+      { title: 'Gemini 3.1 Flash Image', value: 'gemini-3.1-flash-image-preview' },
       { title: 'Gemini 3 Pro Image', value: 'gemini-3-pro-image-preview' },
+      { title: 'Gemini 2.5 Flash Image', value: 'gemini-2.5-flash-image' },
     ];
   }
   return [];
@@ -2663,7 +2662,7 @@ watch(
       if (newProvider === 'openai') {
         editingDevice.ai_model = 'gpt-image-1.5';
       } else if (newProvider === 'google') {
-        editingDevice.ai_model = 'gemini-2.5-flash-image';
+        editingDevice.ai_model = 'gemini-3.1-flash-image-preview';
       } else {
         editingDevice.ai_model = '';
       }
