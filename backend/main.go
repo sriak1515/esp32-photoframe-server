@@ -288,6 +288,7 @@ func main() {
 	protectedApi.PUT("/devices/:id", deviceHandler.UpdateDevice)
 	protectedApi.DELETE("/devices/:id", deviceHandler.DeleteDevice)
 	protectedApi.POST("/devices/:id/push", deviceHandler.PushToDevice)
+	protectedApi.POST("/devices/:id/refresh", deviceHandler.RefreshDevice)
 	protectedApi.GET("/devices/:id/config", ih.GetDeviceConfig)
 	protectedApi.PUT("/devices/:id/config", ih.UpdateDeviceConfig)
 

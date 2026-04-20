@@ -2026,6 +2026,7 @@ import {
   addDevice,
   deleteDevice,
   updateDevice,
+  refreshDevice,
   type Device,
   createURLSource,
   updateURLSource,
@@ -2474,27 +2475,7 @@ const syncFromDevice = async () => {
   if (!editingDevice.id) return;
   syncingFromDevice.value = true;
   try {
-    await updateDevice(
-      editingDevice.id,
-      editingDevice.name!,
-      editingDevice.host!,
-      0,
-      0,
-      '',
-      editingDevice.enable_collage!,
-      editingDevice.show_date!,
-      editingDevice.show_photo_date || false,
-      editingDevice.show_weather!,
-      editingDevice.weather_lat || 0,
-      editingDevice.weather_lon || 0,
-      editingDevice.ai_provider || '',
-      editingDevice.ai_model || '',
-      editingDevice.ai_prompt || '',
-      editingDevice.layout || 'photo_overlay',
-      editingDevice.display_mode || 'cover',
-      editingDevice.show_calendar || false,
-      editingDevice.calendar_id || ''
-    );
+    await refreshDevice(editingDevice.id);
     await loadDevices();
     // Re-load the updated device into the dialog
     const updated = availableDevices.value.find(
@@ -2621,7 +2602,10 @@ const aiModelOptionsForProvider = (provider: string | undefined) => {
     ];
   } else if (provider === 'google') {
     return [
-      { title: 'Gemini 3.1 Flash Image', value: 'gemini-3.1-flash-image-preview' },
+      {
+        title: 'Gemini 3.1 Flash Image',
+        value: 'gemini-3.1-flash-image-preview',
+      },
       { title: 'Gemini 3 Pro Image', value: 'gemini-3-pro-image-preview' },
       { title: 'Gemini 2.5 Flash Image', value: 'gemini-2.5-flash-image' },
     ];
@@ -2777,8 +2761,6 @@ const saveDevice = async () => {
         editingDevice.id,
         editingDevice.name!,
         editingDevice.host!,
-        editingDevice.width!,
-        editingDevice.height!,
         deviceConfig.display_orientation || editingDevice.orientation!,
         editingDevice.enable_collage!,
         editingDevice.show_date!,

@@ -102,12 +102,13 @@ export const addDevice = async (params: {
   return response.data;
 };
 
+// Updates server-owned + shared fields only. Dimensions / board name come
+// from refreshDevice(); device-side config (including the shared copy of
+// name + orientation) is synced via updateDeviceConfig().
 export const updateDevice = async (
   id: number,
   name: string,
   host: string,
-  width: number,
-  height: number,
   orientation: string,
   enableCollage: boolean,
   showDate: boolean,
@@ -127,8 +128,6 @@ export const updateDevice = async (
   const response = await api.put(`/devices/${id}`, {
     name,
     host,
-    width,
-    height,
     orientation,
     enable_collage: enableCollage,
     show_date: showDate,
@@ -145,6 +144,13 @@ export const updateDevice = async (
     calendar_id: calendarId || '',
     date_format: dateFormat || '',
   });
+  return response.data;
+};
+
+// Pulls live state (dimensions, board name, config, processing settings,
+// palette) from the device. Requires the device to be online.
+export const refreshDevice = async (id: number) => {
+  const response = await api.post(`/devices/${id}/refresh`);
   return response.data;
 };
 

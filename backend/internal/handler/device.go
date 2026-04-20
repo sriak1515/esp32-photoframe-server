@@ -78,13 +78,13 @@ func (h *DeviceHandler) AddDevice(c echo.Context) error {
 }
 
 // PUT /api/devices/:id
+// Updates server-owned + shared fields only. Dimensions / board name
+// come from POST /api/devices/:id/refresh.
 func (h *DeviceHandler) UpdateDevice(c echo.Context) error {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var req struct {
 		Name          string  `json:"name"`
 		Host          string  `json:"host"`
-		Width         int     `json:"width"`
-		Height        int     `json:"height"`
 		Orientation   string  `json:"orientation"`
 		EnableCollage bool    `json:"enable_collage"`
 		ShowDate      bool    `json:"show_date"`
@@ -109,9 +109,25 @@ func (h *DeviceHandler) UpdateDevice(c echo.Context) error {
 		req.Layout = model.LayoutPhotoOverlay
 	}
 
-	device, err := h.deviceService.UpdateDevice(uint(id), req.Name, req.Host, req.Width, req.Height, req.Orientation, req.EnableCollage, req.ShowDate, req.ShowPhotoDate, req.ShowWeather, req.WeatherLat, req.WeatherLon, req.AIProvider, req.AIModel, req.AIPrompt, req.Layout, req.DisplayMode, req.ShowCalendar, req.CalendarID, req.DateFormat)
+	device, err := h.deviceService.UpdateDevice(uint(id), req.Name, req.Host, req.Orientation, req.EnableCollage, req.ShowDate, req.ShowPhotoDate, req.ShowWeather, req.WeatherLat, req.WeatherLon, req.AIProvider, req.AIModel, req.AIPrompt, req.Layout, req.DisplayMode, req.ShowCalendar, req.CalendarID, req.DateFormat)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, device)
+}
+
+// POST /api/devices/:id/refresh
+// Pulls dimensions, board name, config, processing settings, and palette
+// from the device. Requires the device to be online.
+func (h *DeviceHandler) RefreshDevice(c echo.Context) error {
+	id, _ := strconv.Atoi(c.Param("id"))
+	device, err := h.deviceService.RefreshDeviceFromHardware(uint(id))
+	if err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "failed to fetch") {
+			return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": errMsg})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": errMsg})
 	}
 	return c.JSON(http.StatusOK, device)
 }

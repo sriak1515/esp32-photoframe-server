@@ -143,80 +143,36 @@ func (s *DeviceService) AddDevice(host string, enableCollage, showDate, showPhot
 	return device, nil
 }
 
-func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height int, orientation string, enableCollage, showDate, showPhotoDate, showWeather bool, weatherLat, weatherLon float64, aiProvider, aiModel, aiPrompt string, layout string, displayMode string, showCalendar bool, calendarID string, dateFormat string) (*model.Device, error) {
+// UpdateDevice writes only fields the server owns or shares with the device
+// (Name, Host, Orientation, and the render/overlay settings). It never
+// contacts the device, so offline edits succeed — shared fields (Name,
+// Orientation) propagate to the device via the separate updateDeviceConfig
+// path (push-if-online, else X-Config-Payload on next fetch).
+//
+// Hardware-derived fields (Width, Height, BoardName, DeviceConfig,
+// DeviceProcessingSettings, DeviceColorPalette) are only written by
+// AddDevice and RefreshDeviceFromHardware.
+func (s *DeviceService) UpdateDevice(id uint, name, host, orientation string, enableCollage, showDate, showPhotoDate, showWeather bool, weatherLat, weatherLon float64, aiProvider, aiModel, aiPrompt string, layout string, displayMode string, showCalendar bool, calendarID string, dateFormat string) (*model.Device, error) {
 	var device model.Device
 	if err := s.db.First(&device, id).Error; err != nil {
 		return nil, errors.New("device not found")
 	}
 
-	// Fetch dimensions if requested and changed to enabled (or if forcing a refresh, logic could be more complex but simple for now)
-	// Signal to refresh: name is empty OR width/height is 0 OR orientation is empty
-	shouldRefresh := name == "" || width == 0 || height == 0 || orientation == "" || device.BoardName == ""
-
-	if shouldRefresh {
-		pfClient := photoframe.NewClient(host)
-
-		// Fetch system info (name, dimensions)
-		sysInfo, err := pfClient.FetchSystemInfo()
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch system info: %w", err)
-		}
-		if name == "" {
-			name = sysInfo.DeviceName
-		}
-		width = sysInfo.Width
-		height = sysInfo.Height
-		if sysInfo.BoardName != "" {
-			device.BoardName = sysInfo.BoardName
-		}
-
-		// Fetch and store full device config (single request)
-		configRaw, err := pfClient.FetchConfig()
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch device config: %w", err)
-		}
-		device.DeviceConfig = configRaw
-
-		// Parse orientation from the raw config JSON
-		var parsedConfig struct {
-			DisplayOrientation string `json:"display_orientation"`
-		}
-		if json.Unmarshal([]byte(configRaw), &parsedConfig) == nil && parsedConfig.DisplayOrientation != "" {
-			orientation = parsedConfig.DisplayOrientation
-		}
-
-		// Fetch and store processing settings
-		procRaw, err := pfClient.FetchProcessingSettings()
-		if err != nil {
-			log.Printf("Failed to fetch processing settings from %s: %v", host, err)
-		} else {
-			device.DeviceProcessingSettings = procRaw
-		}
-
-		// Fetch and store palette
-		paletteRaw, err := pfClient.FetchPalette()
-		if err != nil {
-			log.Printf("Failed to fetch palette from %s: %v", host, err)
-		} else {
-			device.DeviceColorPalette = paletteRaw
-		}
-	}
-
 	if name == "" {
-		name = device.Name // Keep existing if failed to fetch
+		name = device.Name // Keep existing if blank
 	}
 	if name == "" {
 		name = host // Final fallback
 	}
-	// Validate dimensions
-	if width == 0 || height == 0 {
-		return nil, errors.New("device dimensions are required")
+	if orientation == "" {
+		orientation = device.Orientation
+	}
+	if displayMode == "" {
+		displayMode = "cover"
 	}
 
 	device.Name = name
 	device.Host = host
-	device.Width = width
-	device.Height = height
 	device.Orientation = orientation
 	device.EnableCollage = enableCollage
 	device.ShowDate = showDate
@@ -228,13 +184,65 @@ func (s *DeviceService) UpdateDevice(id uint, name, host string, width, height i
 	device.AIModel = aiModel
 	device.AIPrompt = aiPrompt
 	device.Layout = layout
-	if displayMode == "" {
-		displayMode = "cover"
-	}
 	device.DisplayMode = displayMode
 	device.ShowCalendar = showCalendar
 	device.CalendarID = calendarID
 	device.DateFormat = dateFormat
+
+	if err := s.db.Save(&device).Error; err != nil {
+		return nil, err
+	}
+	return &device, nil
+}
+
+// RefreshDeviceFromHardware pulls live state from the device (dimensions,
+// board name, config, processing settings, palette) and writes it onto the
+// stored row. Unlike UpdateDevice this requires the device to be reachable
+// and returns an error if any of the critical fetches fail.
+func (s *DeviceService) RefreshDeviceFromHardware(id uint) (*model.Device, error) {
+	var device model.Device
+	if err := s.db.First(&device, id).Error; err != nil {
+		return nil, errors.New("device not found")
+	}
+
+	pfClient := photoframe.NewClient(device.Host)
+
+	sysInfo, err := pfClient.FetchSystemInfo()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch system info: %w", err)
+	}
+	if sysInfo.DeviceName != "" {
+		device.Name = sysInfo.DeviceName
+	}
+	device.Width = sysInfo.Width
+	device.Height = sysInfo.Height
+	if sysInfo.BoardName != "" {
+		device.BoardName = sysInfo.BoardName
+	}
+
+	configRaw, err := pfClient.FetchConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch device config: %w", err)
+	}
+	device.DeviceConfig = configRaw
+	var parsedConfig struct {
+		DisplayOrientation string `json:"display_orientation"`
+	}
+	if json.Unmarshal([]byte(configRaw), &parsedConfig) == nil && parsedConfig.DisplayOrientation != "" {
+		device.Orientation = parsedConfig.DisplayOrientation
+	}
+
+	if procRaw, err := pfClient.FetchProcessingSettings(); err != nil {
+		log.Printf("Failed to fetch processing settings from %s: %v", device.Host, err)
+	} else {
+		device.DeviceProcessingSettings = procRaw
+	}
+
+	if paletteRaw, err := pfClient.FetchPalette(); err != nil {
+		log.Printf("Failed to fetch palette from %s: %v", device.Host, err)
+	} else {
+		device.DeviceColorPalette = paletteRaw
+	}
 
 	if err := s.db.Save(&device).Error; err != nil {
 		return nil, err
