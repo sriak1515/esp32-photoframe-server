@@ -545,7 +545,7 @@ const layoutTemplate = `<!DOCTYPE html>
   img.photo {
     width: 100%;
     height: 100%;
-    object-fit: {{.DisplayMode}};
+    object-fit: {{if eq .DisplayMode "fit"}}contain{{else}}cover{{end}};
     display: block;
     position: relative;
     z-index: 1;
