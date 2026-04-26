@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.7.4
+
+### Added
+- Standalone server-side gallery: photos uploaded from the web UI or sent to the Telegram bot are stored under `data/photos/gallery/` and tracked in the images table. Telegram is now an upload path into the gallery rather than a separate source; push-to-device on bot upload still works when enabled. Migration `000022` rewrites any existing `images.source` / `settings.image_source` rows from `telegram` to `gallery`
+
+### Changed
+- Update AI model list: drop deprecated DALL-E entries, add Gemini 3.1 Flash
+- Split server-owned device fields from hardware-derived ones in the device model
+
+### Fixed
+- Renderer: emit CSS `contain` for fit display mode so cropped images render correctly
+
+### Performance
+- Rewrite `device_histories` prune as a range delete so it stays O(log n) once a device's history grows past a few hundred rows
+
+### Build
+- Bump Alpine base image to 3.21 for newer libheif
+
 ## v1.7.3
 
 ### Fixed
