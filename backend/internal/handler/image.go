@@ -213,17 +213,7 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 
 	var servedImageIDs []uint // Track which IDs were served (1 or 2 if collage)
 
-	if source == model.SourceTelegram {
-		// Serve Telegram Photo (always single, no collage)
-		imgPath := filepath.Join(h.dataDir, "photos", "telegram_last.jpg")
-		f, fsErr := os.Open(imgPath)
-		if fsErr != nil {
-			err = fsErr
-		} else {
-			defer f.Close()
-			img, _, err = image.Decode(f)
-		}
-	} else if source == model.SourceAIGeneration {
+	if source == model.SourceAIGeneration {
 		// AI Generation: generate fresh image from device config
 		if !deviceFound {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "device not found - AI generation requires device config"})
@@ -878,7 +868,7 @@ func (h *ImageHandler) fetchRandomPhoto(sourceFilter string, excludeIDs []uint, 
 // earlyResult (the caller should return immediately).
 func (h *ImageHandler) applySourceFilter(query *gorm.DB, sourceFilter string, deviceID *uint) (*gorm.DB, image.Image, error) {
 	switch sourceFilter {
-	case model.SourceGooglePhotos, model.SourceSynologyPhotos, model.SourceTelegram, model.SourceImmich:
+	case model.SourceGooglePhotos, model.SourceSynologyPhotos, model.SourceGallery, model.SourceImmich:
 		return query.Where("source = ?", sourceFilter), nil, nil
 	case model.SourceURLProxy:
 		img, _, err := h.fetchRandomURLProxy(deviceID)

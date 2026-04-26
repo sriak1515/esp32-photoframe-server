@@ -11,11 +11,11 @@ export const useGalleryStore = defineStore('gallery', {
     limit: 48,
     importMessage: '',
     pickerTimer: null as number | null,
-    source: 'immich' as
+    source: 'gallery' as
       | 'google_photos'
       | 'synology_photos'
       | 'immich'
-      | 'telegram'
+      | 'gallery'
       | 'url_proxy',
   }),
   getters: {
@@ -27,7 +27,7 @@ export const useGalleryStore = defineStore('gallery', {
         | 'google_photos'
         | 'synology_photos'
         | 'immich'
-        | 'telegram'
+        | 'gallery'
         | 'url_proxy'
     ) {
       this.source = source;
@@ -91,6 +91,36 @@ export const useGalleryStore = defineStore('gallery', {
       }
     },
 
+    async uploadFiles(files: FileList | File[], caption = '') {
+      const list = Array.from(files);
+      if (list.length === 0) return;
+
+      this.loading = true;
+      let added = 0;
+      try {
+        for (const file of list) {
+          const fd = new FormData();
+          fd.append('file', file);
+          if (caption) fd.append('caption', caption);
+          await api.post('/gallery/upload', fd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+          added++;
+        }
+        this.importMessage = `Uploaded ${added} photo${added === 1 ? '' : 's'}.`;
+        setTimeout(() => (this.importMessage = ''), 5000);
+        this.page = 1;
+        await this.fetchPhotos();
+      } catch (e: any) {
+        console.error('Upload failed', e);
+        this.importMessage =
+          e?.response?.data?.error || 'Failed to upload photo';
+        setTimeout(() => (this.importMessage = ''), 5000);
+      } finally {
+        this.loading = false;
+      }
+    },
+
     async startPicker() {
       const store = useSettingsStore();
 
@@ -104,6 +134,13 @@ export const useGalleryStore = defineStore('gallery', {
       if (this.source === 'immich') {
         this.importMessage =
           'Use the Sync button in Immich settings to add photos.';
+        setTimeout(() => (this.importMessage = ''), 5000);
+        return;
+      }
+
+      if (this.source === 'gallery') {
+        this.importMessage =
+          'Use the Upload button to add photos to the gallery.';
         setTimeout(() => (this.importMessage = ''), 5000);
         return;
       }

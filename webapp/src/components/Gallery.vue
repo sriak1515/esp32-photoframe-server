@@ -1,24 +1,7 @@
 <template>
   <div>
-    <!-- Telegram Mode Notice -->
-    <v-alert
-      v-if="store.settings.source === 'telegram'"
-      type="info"
-      variant="tonal"
-      class="mb-4"
-    >
-      <div class="text-subtitle-1 font-weight-bold mb-1">
-        Telegram Mode Active
-      </div>
-      <div class="text-body-2">
-        The frame is currently displaying photos sent to your Telegram Bot.
-        <br />
-        Go to <b>Settings</b> to switch back to Google Photos mode.
-      </div>
-    </v-alert>
-
     <!-- Gallery Content -->
-    <div v-else>
+    <div>
       <!-- Header with Stats and Actions -->
       <div class="d-flex justify-space-between align-center mb-4">
         <div>
@@ -43,6 +26,26 @@
           >
             Delete All
           </v-btn>
+          <v-btn
+            v-if="galleryStore.source === 'gallery'"
+            color="primary"
+            variant="flat"
+            height="40"
+            :loading="galleryStore.loading"
+            :disabled="galleryStore.loading"
+            prepend-icon="mdi-upload"
+            @click="triggerUpload"
+          >
+            Upload Photos
+          </v-btn>
+          <input
+            ref="uploadInput"
+            type="file"
+            accept="image/*"
+            multiple
+            class="d-none"
+            @change="onFilesSelected"
+          />
           <v-btn
             v-if="galleryStore.source === 'google_photos'"
             color="primary"
@@ -221,6 +224,9 @@
           <span v-if="galleryStore.source === 'google_photos'">
             Get started by adding photos from Google Photos.
           </span>
+          <span v-else-if="galleryStore.source === 'gallery'">
+            Upload photos here, or send them to your Telegram bot.
+          </span>
           <span v-else>
             Use the <b>Sync Now</b> button above to import photos from Synology.
           </span>
@@ -232,6 +238,14 @@
           @click="galleryStore.startPicker"
         >
           Add Photos
+        </v-btn>
+        <v-btn
+          v-else-if="galleryStore.source === 'gallery'"
+          color="primary"
+          prepend-icon="mdi-upload"
+          @click="triggerUpload"
+        >
+          Upload Photos
         </v-btn>
       </div>
     </div>
@@ -287,14 +301,25 @@
 
 <script setup lang="ts">
 import { onMounted, ref, reactive } from 'vue';
-import { useSettingsStore } from '../stores/settings';
 import { useAuthStore } from '../stores/auth';
 import { useGalleryStore } from '../stores/gallery';
 import { listDevices, pushToDevice, type Device } from '../api';
 
-const store = useSettingsStore();
 const authStore = useAuthStore();
 const galleryStore = useGalleryStore();
+
+const uploadInput = ref<HTMLInputElement | null>(null);
+
+const triggerUpload = () => {
+  uploadInput.value?.click();
+};
+
+const onFilesSelected = async (e: Event) => {
+  const target = e.target as HTMLInputElement;
+  if (!target.files || target.files.length === 0) return;
+  await galleryStore.uploadFiles(target.files);
+  target.value = '';
+};
 
 // Push Dialog State
 const devices = ref<Device[]>([]);

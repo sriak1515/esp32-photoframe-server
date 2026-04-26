@@ -303,6 +303,7 @@ func main() {
 
 	// Gallery (Protected) - Unified
 	protectedApi.GET("/gallery/photos", gh.ListPhotos)
+	protectedApi.POST("/gallery/upload", gh.UploadPhoto)
 	protectedApi.GET("/gallery/thumbnail/:id", gh.GetThumbnail)
 	protectedApi.DELETE("/gallery/photos/:id", gh.DeletePhoto)
 	protectedApi.DELETE("/gallery/photos", gh.DeletePhotos)

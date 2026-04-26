@@ -5,6 +5,8 @@ import (
 	"image"
 	"image/draw"
 	"image/jpeg"
+	_ "image/png"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -98,6 +100,88 @@ func (h *GalleryHandler) ListPhotos(c echo.Context) error {
 		"limit":  limit,
 		"offset": offset,
 	})
+}
+
+// UploadPhoto accepts a multipart upload and stores it in the gallery.
+// Form fields: file (required), caption (optional).
+func (h *GalleryHandler) UploadPhoto(c echo.Context) error {
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "file is required"})
+	}
+
+	galleryDir := filepath.Join(h.dataDir, "photos", "gallery")
+	if err := os.MkdirAll(galleryDir, 0755); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create gallery directory"})
+	}
+
+	src, err := fileHeader.Open()
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to open upload"})
+	}
+	defer src.Close()
+
+	destPath := filepath.Join(galleryDir, fmt.Sprintf("upload_%d%s", time.Now().UnixNano(), filepath.Ext(fileHeader.Filename)))
+	dst, err := os.Create(destPath)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to write file"})
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		dst.Close()
+		os.Remove(destPath)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save file"})
+	}
+	dst.Close()
+
+	width, height, orientation := decodeImageDimensions(destPath)
+	if width == 0 || height == 0 {
+		os.Remove(destPath)
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "uploaded file is not a supported image"})
+	}
+
+	img := model.Image{
+		FilePath:    destPath,
+		Source:      model.SourceGallery,
+		UserID:      1,
+		Status:      "pending",
+		CreatedAt:   time.Now(),
+		Caption:     c.FormValue("caption"),
+		Width:       width,
+		Height:      height,
+		Orientation: orientation,
+	}
+	if err := h.db.Create(&img).Error; err != nil {
+		os.Remove(destPath)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save photo"})
+	}
+
+	return c.JSON(http.StatusCreated, map[string]interface{}{
+		"id":            img.ID,
+		"caption":       img.Caption,
+		"width":         img.Width,
+		"height":        img.Height,
+		"orientation":   img.Orientation,
+		"source":        img.Source,
+		"created_at":    img.CreatedAt,
+		"thumbnail_url": fmt.Sprintf("api/gallery/thumbnail/%d", img.ID),
+	})
+}
+
+func decodeImageDimensions(path string) (int, int, string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, 0, "landscape"
+	}
+	defer f.Close()
+	cfg, _, err := image.DecodeConfig(f)
+	if err != nil {
+		return 0, 0, "landscape"
+	}
+	orientation := "landscape"
+	if cfg.Height > cfg.Width {
+		orientation = "portrait"
+	}
+	return cfg.Width, cfg.Height, orientation
 }
 
 // GetThumbnail serves the thumbnail for a photo.
@@ -215,7 +299,7 @@ func (h *GalleryHandler) DeletePhoto(c echo.Context) error {
 	}
 
 	// If local, delete file
-	if item.Source == model.SourceGooglePhotos {
+	if item.Source == model.SourceGooglePhotos || item.Source == model.SourceGallery {
 		if item.FilePath != "" {
 			os.Remove(item.FilePath)
 		}
@@ -248,7 +332,7 @@ func (h *GalleryHandler) DeletePhotos(c echo.Context) error {
 	}
 
 	for _, item := range items {
-		if item.Source == model.SourceGooglePhotos {
+		if item.Source == model.SourceGooglePhotos || item.Source == model.SourceGallery {
 			if item.FilePath != "" {
 				os.Remove(item.FilePath)
 			}

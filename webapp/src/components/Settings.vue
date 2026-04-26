@@ -4,6 +4,7 @@
     <!-- Gallery Card -->
     <v-card class="mb-6">
       <v-tabs v-model="galleryTab" color="primary">
+        <v-tab value="gallery">Gallery</v-tab>
         <v-tab value="immich">Immich</v-tab>
         <v-tab value="google_photos">Google Photos</v-tab>
         <v-tab value="synology_photos">Synology</v-tab>
@@ -46,10 +47,10 @@
               density="compact"
               class="mb-4"
             >
+              <v-tab value="gallery">Gallery</v-tab>
               <v-tab value="immich">Immich</v-tab>
               <v-tab value="google">Google</v-tab>
               <v-tab value="synology_photos">Synology</v-tab>
-              <v-tab value="telegram">Telegram</v-tab>
               <v-tab value="url">URL Proxy</v-tab>
               <v-tab value="ai_generation">AI Generation</v-tab>
             </v-tabs>
@@ -654,9 +655,42 @@
                 </v-card-text>
               </v-window-item>
 
-              <!-- Telegram -->
-              <v-window-item value="telegram">
+              <!-- Gallery -->
+              <v-window-item value="gallery">
                 <v-card-text>
+                  <v-alert
+                    type="info"
+                    variant="tonal"
+                    class="mb-4"
+                    density="compact"
+                  >
+                    Photos in the gallery live on this server. Add them from the
+                    Gallery tab above, or send them to the Telegram bot
+                    configured below.
+                  </v-alert>
+
+                  <v-text-field
+                    :model-value="getImageUrl('gallery')"
+                    label="Image Endpoint URL (for firmware config)"
+                    readonly
+                    variant="outlined"
+                    density="compact"
+                    append-inner-icon="mdi-content-copy"
+                    @click:append-inner="
+                      copyToClipboard(getImageUrl('gallery'))
+                    "
+                  ></v-text-field>
+
+                  <v-divider class="my-4"></v-divider>
+
+                  <h3 class="text-subtitle-1 font-weight-bold mb-1">
+                    Telegram Bot (Upload)
+                  </h3>
+                  <div class="text-caption text-grey mb-3">
+                    Optional. Configure a Telegram bot to upload photos into the
+                    gallery from your phone.
+                  </div>
+
                   <div v-if="form.telegram_bot_token">
                     <v-alert
                       type="success"
@@ -669,22 +703,9 @@
                     </v-alert>
 
                     <v-text-field
-                      :model-value="getImageUrl('telegram')"
-                      label="Image Endpoint URL (for firmware config)"
-                      readonly
-                      variant="outlined"
-                      density="compact"
-                      append-inner-icon="mdi-content-copy"
-                      @click:append-inner="
-                        copyToClipboard(getImageUrl('telegram'))
-                      "
-                    ></v-text-field>
-
-                    <v-text-field
                       v-model="form.telegram_bot_token"
                       label="Telegram Bot Token"
                       variant="outlined"
-                      class="mt-4"
                     ></v-text-field>
 
                     <v-divider class="my-4"></v-divider>
@@ -693,8 +714,9 @@
                       Push to Device
                     </h3>
                     <div class="text-caption text-grey mb-2">
-                      Enable to push generic images directly to the device
-                      display when sent to the bot.
+                      When enabled, photos uploaded via the Telegram bot are
+                      also pushed to the selected devices immediately. They are
+                      added to the gallery either way.
                     </div>
 
                     <v-checkbox
@@ -735,7 +757,7 @@
                       label="Telegram Bot Token"
                       placeholder="Enter Bot Token"
                       variant="outlined"
-                      hint="Send photos to your bot to display them. Only the last photo will be shown."
+                      hint="Send photos to your bot to add them to the gallery."
                       persistent-hint
                     ></v-text-field>
 
@@ -2051,18 +2073,18 @@ const immichConnected = ref(false);
 const authStore = useAuthStore();
 const galleryStore = useGalleryStore();
 const activeMainTab = ref('devices');
-const activeDataSourceTab = ref('immich');
-const galleryTab = ref('immich');
+const activeDataSourceTab = ref('gallery');
+const galleryTab = ref('gallery');
 const confirmDialog = ref();
 
 // Image Source Binding State
 const useThisServer = ref(true);
 const selectedSource = ref('immich');
 const sourceOptions = [
+  { title: 'Gallery', value: 'gallery' },
   { title: 'Immich', value: 'immich' },
   { title: 'Google Photos', value: 'google_photos' },
   { title: 'Synology Photos', value: 'synology_photos' },
-  { title: 'Telegram', value: 'telegram' },
   { title: 'URL Proxy', value: 'url_proxy' },
   { title: 'AI Generation', value: 'ai_generation' },
 ];
@@ -2886,6 +2908,8 @@ watch(galleryTab, (val) => {
     galleryStore.setSource('synology_photos');
   } else if (val === 'immich') {
     galleryStore.setSource('immich');
+  } else if (val === 'gallery') {
+    galleryStore.setSource('gallery');
   }
 });
 

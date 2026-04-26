@@ -14,7 +14,7 @@ type Setting struct {
 const (
 	SourceGooglePhotos   = "google_photos"
 	SourceSynologyPhotos = "synology_photos"
-	SourceTelegram       = "telegram"
+	SourceGallery        = "gallery"
 	SourceURLProxy       = "url_proxy"
 	SourceAIGeneration   = "ai_generation"
 	SourceImmich         = "immich"

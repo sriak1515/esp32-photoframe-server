@@ -2,6 +2,9 @@ package telegram
 
 import (
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"log"
 	"os"
 	"path/filepath"
@@ -63,43 +66,48 @@ func (bot *Bot) Stop() {
 
 func (bot *Bot) registerHandlers() {
 	bot.b.Handle("/start", func(c tele.Context) error {
-		return c.Send("Hello! Send me a photo to display on your frame.")
+		return c.Send("Hello! Send me a photo to add it to the gallery.")
 	})
 
 	bot.b.Handle(tele.OnPhoto, bot.handlePhoto)
 }
 
 func (bot *Bot) handlePhoto(c tele.Context) error {
-	// Download photo
 	photo := c.Message().Photo
 
-	// Create directory if not exists
-	photosDir := filepath.Join(bot.dataDir, "photos")
-	if err := os.MkdirAll(photosDir, 0755); err != nil {
-		return c.Send("Failed to create photos directory.")
+	galleryDir := filepath.Join(bot.dataDir, "photos", "gallery")
+	if err := os.MkdirAll(galleryDir, 0755); err != nil {
+		return c.Send("Failed to create gallery directory.")
 	}
 
-	// Target file path
-	destPath := filepath.Join(photosDir, "telegram_last.jpg")
+	destPath := filepath.Join(galleryDir, fmt.Sprintf("telegram_%d.jpg", time.Now().UnixNano()))
 
-	// Download
 	if err := bot.b.Download(&photo.File, destPath); err != nil {
 		return c.Send("Failed to download photo: " + err.Error())
 	}
 
-	// Update Caption Setting
-	caption := c.Message().Caption
-	var setting model.Setting
-	setting.Key = "telegram_caption"
-	setting.Value = caption
-	bot.db.Save(&setting)
+	width, height, orientation := decodeDimensions(destPath)
 
-	// Check if Push to Device is enabled
+	img := model.Image{
+		FilePath:    destPath,
+		Source:      model.SourceGallery,
+		UserID:      1,
+		Status:      "pending",
+		CreatedAt:   time.Now(),
+		Caption:     c.Message().Caption,
+		Width:       width,
+		Height:      height,
+		Orientation: orientation,
+	}
+	if err := bot.db.Create(&img).Error; err != nil {
+		os.Remove(destPath)
+		return c.Send("Failed to save photo: " + err.Error())
+	}
+
 	pushEnabled, _ := bot.settings.Get("telegram_push_enabled")
 	targetDeviceIDStr, _ := bot.settings.Get("telegram_target_device_id")
 
 	if pushEnabled == "true" && targetDeviceIDStr != "" {
-		// Send initial status
 		statusMsg, err := bot.b.Send(c.Recipient(), "Connecting to devices...")
 		if err != nil {
 			log.Printf("Failed to send status message: %v", err)
@@ -116,7 +124,6 @@ func (bot *Bot) handlePhoto(c tele.Context) error {
 				continue
 			}
 
-			// Look up device
 			var device model.Device
 			if err := bot.db.First(&device, id).Error; err != nil {
 				log.Printf("Failed to find target device (ID: %s): %v", id, err)
@@ -134,7 +141,7 @@ func (bot *Bot) handlePhoto(c tele.Context) error {
 		}
 
 		var summary strings.Builder
-		summary.WriteString("Photo updated!\n")
+		summary.WriteString("Photo added to gallery!\n")
 
 		if len(successDevices) > 0 {
 			for _, name := range successDevices {
@@ -157,5 +164,22 @@ func (bot *Bot) handlePhoto(c tele.Context) error {
 		return nil
 	}
 
-	return c.Send("Photo updated! It will show up next time the device awakes.")
+	return c.Send("Photo added to gallery! It will show up next time the device awakes.")
+}
+
+func decodeDimensions(path string) (int, int, string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, 0, "landscape"
+	}
+	defer f.Close()
+	cfg, _, err := image.DecodeConfig(f)
+	if err != nil {
+		return 0, 0, "landscape"
+	}
+	orientation := "landscape"
+	if cfg.Height > cfg.Width {
+		orientation = "portrait"
+	}
+	return cfg.Width, cfg.Height, orientation
 }
