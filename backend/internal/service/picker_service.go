@@ -13,6 +13,7 @@ import (
 
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/model"
 	"github.com/aitjcize/esp32-photoframe-server/backend/pkg/googlephotos"
+	"github.com/aitjcize/esp32-photoframe-server/backend/pkg/imageops"
 	"gorm.io/gorm"
 )
 
@@ -265,6 +266,13 @@ func (s *PickerService) ProcessSessionItems(sessionID string) (int, error) {
 		if err != nil {
 			s.progress[sessionID].Processed++
 			continue
+		}
+
+		// Bake EXIF orientation into the pixels. Google's CDN with size
+		// hints usually returns pre-rotated pixels, but the API doesn't
+		// guarantee it; auto-orient is a cheap safety net. Non-fatal.
+		if err := imageops.AutoOrient(localPath); err != nil {
+			fmt.Printf("auto-orient failed for google photo %s: %v\n", localPath, err)
 		}
 
 		// Decode image config to get dimensions

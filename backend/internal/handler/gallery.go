@@ -7,6 +7,7 @@ import (
 	"image/jpeg"
 	_ "image/png"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/model"
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/service"
+	"github.com/aitjcize/esp32-photoframe-server/backend/pkg/imageops"
 	"github.com/labstack/echo/v4"
 	xdraw "golang.org/x/image/draw"
 	"gorm.io/gorm"
@@ -132,6 +134,13 @@ func (h *GalleryHandler) UploadPhoto(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save file"})
 	}
 	dst.Close()
+
+	// Bake EXIF orientation into the pixels so iPhone portrait shots
+	// (Orientation=6 with landscape pixels) display the right way up.
+	// Failure is non-fatal: log and continue with the original file.
+	if err := imageops.AutoOrient(destPath); err != nil {
+		log.Printf("auto-orient failed for upload %s: %v", destPath, err)
+	}
 
 	width, height, orientation := decodeImageDimensions(destPath)
 	if width == 0 || height == 0 {
