@@ -7,6 +7,7 @@ import (
 
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/db"
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/handler"
+	"github.com/aitjcize/esp32-photoframe-server/backend/internal/imagesource"
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/middleware"
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/model"
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/service"
@@ -175,6 +176,22 @@ func main() {
 	immichService.StartAutoSync()
 	// Initialize AI Generation Service
 	aiGenerationService := service.NewAIGenerationService(settingsService)
+	// Initialize Generative (procedural) Service — fractal / DLA / …
+	generativeService := service.NewGenerativeService(database)
+
+	// Image-source registry: every image source — synthetic and library —
+	// registers here as its own plugin. The order below mirrors the order
+	// of the source dropdown in webapp/src/components/Settings.vue so the
+	// two stay easy to scan against each other.
+	sourceRegistry := imagesource.NewRegistry()
+	sourceRegistry.Register(service.NewGallerySource(database, dataDir))
+	sourceRegistry.Register(service.NewImmichSource(database, immichService))
+	sourceRegistry.Register(service.NewGooglePhotosSource(database, dataDir))
+	sourceRegistry.Register(service.NewSynologyPhotosSource(database, synologyService))
+	sourceRegistry.Register(service.NewURLProxySource(database))
+	sourceRegistry.Register(service.NewAIGenerationSource(aiGenerationService))
+	sourceRegistry.Register(service.NewFractalSource(generativeService))
+	sourceRegistry.Register(service.NewDLASource(generativeService))
 
 	// Initialize Picker Service
 	// dataDir already set from migration logic above
@@ -221,11 +238,8 @@ func main() {
 		Settings:       settingsService,
 		Renderer:       rendererService,
 		Processor:      processorService,
-		Google:         googleClient,
 		CalendarGoogle: googleCalendarClient,
-		Synology:       synologyService,
-		Immich:         immichService,
-		AIGen:          aiGenerationService,
+		Sources:        sourceRegistry,
 		Weather:        weatherClient,
 		Calendar:       calendarClient,
 		Auth:           authService,

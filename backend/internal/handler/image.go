@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/png"
 	"log"
 
 	_ "image/jpeg"
-	_ "image/png"
 
 	"net/http"
 	"os"
@@ -18,26 +18,29 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aitjcize/esp32-photoframe-server/backend/internal/imagesource"
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/model"
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/service"
 	"github.com/aitjcize/esp32-photoframe-server/backend/pkg/gcalendar"
 	"github.com/aitjcize/esp32-photoframe-server/backend/pkg/googlephotos"
-	"github.com/aitjcize/esp32-photoframe-server/backend/pkg/imageops"
 	"github.com/aitjcize/esp32-photoframe-server/backend/pkg/photoframe"
 	"github.com/aitjcize/esp32-photoframe-server/backend/pkg/weather"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 )
 
+// ImageHandlerDeps is the dependency bundle the handler needs at construction.
+// Photo-library backends (synology, immich, google, on-disk gallery) live
+// inside their respective imagesource plugins now — the handler itself
+// only needs DB access for device lookup / history, the renderer for
+// overlays, the processor for dithering, the weather/calendar clients for
+// overlay data, the auth service, and the registered source registry.
 type ImageHandlerDeps struct {
 	Settings       *service.SettingsService
 	Renderer       *service.RendererService
 	Processor      *service.ProcessorService
-	Google         *googlephotos.Client
 	CalendarGoogle *googlephotos.Client
-	Synology       *service.SynologyService
-	Immich         *service.ImmichService
-	AIGen          *service.AIGenerationService
+	Sources        *imagesource.Registry
 	Weather        *weather.Client
 	Calendar       *gcalendar.Client
 	Auth           *service.AuthService
@@ -49,11 +52,8 @@ type ImageHandler struct {
 	settings       *service.SettingsService
 	renderer       *service.RendererService
 	processor      *service.ProcessorService
-	google         *googlephotos.Client
 	calendarGoogle *googlephotos.Client
-	synology       *service.SynologyService
-	immich         *service.ImmichService
-	aiGen          *service.AIGenerationService
+	sources        *imagesource.Registry
 	weather        *weather.Client
 	calendar       *gcalendar.Client
 	auth           *service.AuthService
@@ -66,11 +66,8 @@ func NewImageHandler(deps ImageHandlerDeps) *ImageHandler {
 		settings:       deps.Settings,
 		renderer:       deps.Renderer,
 		processor:      deps.Processor,
-		google:         deps.Google,
 		calendarGoogle: deps.CalendarGoogle,
-		synology:       deps.Synology,
-		immich:         deps.Immich,
-		aiGen:          deps.AIGen,
+		sources:        deps.Sources,
 		weather:        deps.Weather,
 		calendar:       deps.Calendar,
 		auth:           deps.Auth,
@@ -117,7 +114,6 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 	// Logical resolution for image generation (respects orientation)
 	logicalW, logicalH := 800, 480
 
-	enableCollage := false
 	showDate := false
 	showPhotoDate := false
 	showWeather := false
@@ -128,7 +124,6 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 		nativeH = device.Height
 		logicalW, logicalH = nativeW, nativeH
 
-		enableCollage = device.EnableCollage
 		showDate = device.ShowDate
 		showPhotoDate = device.ShowPhotoDate
 		showWeather = device.ShowWeather
@@ -211,32 +206,26 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 		}
 	}
 
-	var servedImageIDs []uint // Track which IDs were served (1 or 2 if collage)
-
-	if source == model.SourceAIGeneration {
-		// AI Generation: generate fresh image from device config
-		if !deviceFound {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "device not found - AI generation requires device config"})
-		}
-		img, err = h.aiGen.Generate(&device)
-	} else if enableCollage {
-		var devID *uint
-		if deviceFound {
-			devID = &device.ID
-		}
-		img, servedImageIDs, err = h.fetchSmartCollage(logicalW, logicalH, source, excludeIDs, devID)
-	} else {
-		var id uint
-		var devID *uint
-		if deviceFound {
-			devID = &device.ID
-		}
-		img, id, err = h.fetchRandomPhoto(source, excludeIDs, devID)
-		if err == nil {
-			servedImageIDs = append(servedImageIDs, id)
-		}
+	// All image sources — synthetic (AI, fractal, DLA) and library-backed
+	// (gallery, immich, synology, google_photos, url_proxy) — flow through
+	// the unified imagesource.Registry.
+	if !h.sources.Has(source) {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "invalid source"})
 	}
-
+	var devicePtr *model.Device
+	if deviceFound {
+		devicePtr = &device
+	}
+	sourceResp, err := h.sources.Fetch(source, &imagesource.Request{
+		Device:       devicePtr,
+		Source:       source,
+		Width:        logicalW,
+		Height:       logicalH,
+		NativeWidth:  nativeW,
+		NativeHeight: nativeH,
+		Orientation:  orientation,
+		ExcludeIDs:   excludeIDs,
+	})
 	if err != nil {
 		if strings.Contains(err.Error(), "invalid source filter") {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "invalid source"})
@@ -246,13 +235,31 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to fetch photo: " + err.Error()})
 	}
+	img = sourceResp.Image
+	servedImageIDs := sourceResp.ImageIDs
+	if sourceResp.PhotoTakenAt != nil {
+		photoTakenAt = sourceResp.PhotoTakenAt
+	}
 
-	// Look up PhotoTakenAt from the first served image
-	if deviceFound && device.ShowPhotoDate && len(servedImageIDs) > 0 && servedImageIDs[0] != 0 {
-		var servedImg model.Image
-		if dbErr := h.db.Select("photo_taken_at").First(&servedImg, servedImageIDs[0]).Error; dbErr == nil {
-			photoTakenAt = servedImg.PhotoTakenAt
+	// If the source asked to bypass post-processing, encode straight to PNG
+	// and ship it. The renderer overlay and epaper-image-convert pipeline
+	// are skipped — the source already produced a panel-ready image, and
+	// CDR / preprocessing would shift its flat color regions.
+	if sourceResp.SkipPostProcessing {
+		out := img
+		if logicalW != nativeW || logicalH != nativeH {
+			out = rotate90CW(out)
 		}
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, out); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "png encode: " + err.Error()})
+		}
+		body := buf.Bytes()
+
+		applyConfigSyncHeader(c, &device, deviceFound)
+
+		c.Response().Header().Set("Content-Length", fmt.Sprintf("%d", len(body)))
+		return c.Blob(http.StatusOK, "image/png", body)
 	}
 
 	// 1.6. Record History
@@ -423,22 +430,7 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 	}
 
 	// 5. Config Sync: push config payload if server has newer config
-	if deviceFound && device.ConfigLastUpdated > 0 {
-		deviceConfigTS := int64(0)
-		if tsStr := c.Request().Header.Get("X-Config-Last-Updated"); tsStr != "" {
-			if ts, err := strconv.ParseInt(tsStr, 10, 64); err == nil {
-				deviceConfigTS = ts
-			}
-		}
-		if device.ConfigLastUpdated > deviceConfigTS {
-			payload := buildConfigPayload(&device)
-			if payload != "" {
-				c.Response().Header().Set("X-Config-Payload", payload)
-				log.Printf("Config sync: pushing config to device (server=%d, device=%d)",
-					device.ConfigLastUpdated, deviceConfigTS)
-			}
-		}
-	}
+	applyConfigSyncHeader(c, &device, deviceFound)
 
 	// Set Content-Length header
 	c.Response().Header().Set("Content-Length", fmt.Sprintf("%d", len(processedBytes)))
@@ -674,292 +666,43 @@ func (h *ImageHandler) GetServedImageThumbnail(c echo.Context) error {
 	return c.Blob(http.StatusOK, "image/jpeg", data)
 }
 
-// Helper to retrieve settings safely
-func (h *ImageHandler) getOrientation() string {
-	val, err := h.settings.Get("orientation")
-	if err != nil || val == "" {
-		return "landscape"
+
+// applyConfigSyncHeader sets the X-Config-Payload response header when the
+// server's stored device config is newer than what the device most recently
+// reported. Pulled out so both the bypass branch and the main flow share it.
+func applyConfigSyncHeader(c echo.Context, device *model.Device, deviceFound bool) {
+	if !deviceFound || device.ConfigLastUpdated <= 0 {
+		return
 	}
-	return val
+	deviceConfigTS := int64(0)
+	if tsStr := c.Request().Header.Get("X-Config-Last-Updated"); tsStr != "" {
+		if ts, err := strconv.ParseInt(tsStr, 10, 64); err == nil {
+			deviceConfigTS = ts
+		}
+	}
+	if device.ConfigLastUpdated <= deviceConfigTS {
+		return
+	}
+	payload := buildConfigPayload(device)
+	if payload == "" {
+		return
+	}
+	c.Response().Header().Set("X-Config-Payload", payload)
+	log.Printf("Config sync: pushing config to device (server=%d, device=%d)",
+		device.ConfigLastUpdated, deviceConfigTS)
 }
 
-// fetchSmartCollage fetches one or two photos and creates a collage if the
-// first photo's orientation doesn't match the device orientation.
-func (h *ImageHandler) fetchSmartCollage(screenW, screenH int, sourceFilter string, excludeIDs []uint, deviceID *uint) (image.Image, []uint, error) {
-	devicePortrait := screenH > screenW
-
-	img1, id1, err := h.fetchRandomPhoto(sourceFilter, excludeIDs, deviceID)
-	if err != nil {
-		return nil, nil, err
+// rotate90CW returns src rotated 90° clockwise. Used for bypass sources to
+// translate from the device's logical (oriented) layout to the panel's
+// native physical layout.
+func rotate90CW(src image.Image) *image.RGBA {
+	b := src.Bounds()
+	sw, sh := b.Dx(), b.Dy()
+	dst := image.NewRGBA(image.Rect(0, 0, sh, sw))
+	for y := 0; y < sh; y++ {
+		for x := 0; x < sw; x++ {
+			dst.Set(sh-1-y, x, src.At(b.Min.X+x, b.Min.Y+y))
+		}
 	}
-	servedIDs := []uint{id1}
-
-	bounds := img1.Bounds()
-	isPhotoPortrait := bounds.Dy() > bounds.Dx()
-
-	// Orientation matches - no collage needed
-	if isPhotoPortrait == devicePortrait {
-		return img1, servedIDs, nil
-	}
-
-	// Orientation mismatch - try to find a second photo for collage
-	var targetType string
-	if devicePortrait {
-		targetType = "landscape"
-	} else {
-		targetType = "portrait"
-	}
-
-	excludeWithHistory := append(append([]uint(nil), excludeIDs...), id1)
-
-	// 1. Try with full exclusions (history + id1)
-	img2, id2, err := h.fetchRandomPhotoWithType(targetType, sourceFilter, excludeWithHistory, deviceID)
-	if err != nil || id2 == id1 {
-		log.Printf("SmartCollage: query with history exclusion failed for %s: %v, retrying without history", targetType, err)
-		// 2. Try with only id1 excluded (ignore history)
-		img2, id2, err = h.fetchRandomPhotoWithType(targetType, sourceFilter, []uint{id1}, deviceID)
-	}
-
-	if err == nil && id2 != id1 {
-		servedIDs = append(servedIDs, id2)
-	} else {
-		log.Printf("SmartCollage: no different %s photo found, using same photo twice", targetType)
-		img2 = img1
-		servedIDs = append(servedIDs, id1)
-	}
-
-	if devicePortrait {
-		return h.createVerticalCollage(img1, img2, screenW, screenH), servedIDs, nil
-	}
-	return h.createHorizontalCollage(img1, img2, screenW, screenH), servedIDs, nil
-}
-
-// fetchRandomPhotoWithType fetches a random photo matching the given orientation.
-// orientations "auto" is always included as a match.
-func (h *ImageHandler) fetchRandomPhotoWithType(targetType string, sourceFilter string, excludeIDs []uint, deviceID *uint) (image.Image, uint, error) {
-	query := h.db.Order("RANDOM()").Where("orientation IN ?", []string{targetType, "auto"})
-
-	if len(excludeIDs) > 0 {
-		query = query.Where("id NOT IN ?", excludeIDs)
-	}
-
-	query, earlyResult, err := h.applySourceFilter(query, sourceFilter, deviceID)
-	if earlyResult != nil || err != nil {
-		return earlyResult, 0, err
-	}
-
-	var item model.Image
-	if err := query.First(&item).Error; err != nil {
-		return nil, 0, err
-	}
-
-	img, err := h.loadImageFromRecord(item)
-	if err != nil {
-		return nil, 0, err
-	}
-	return img, item.ID, nil
-}
-
-func (h *ImageHandler) createVerticalCollage(img1, img2 image.Image, width, height int) image.Image {
-	// Target Dimension: width x height (Portrait)
-	// Each slot: width x (height/2)
-	slotHeight := height / 2
-
-	dst := image.NewRGBA(image.Rect(0, 0, width, height))
-
-	// Draw Top
-	imageops.DrawCover(dst, image.Rect(0, 0, width, slotHeight), img1)
-
-	// Draw Bottom
-	imageops.DrawCover(dst, image.Rect(0, slotHeight, width, height), img2)
-
 	return dst
-}
-
-func (h *ImageHandler) createHorizontalCollage(img1, img2 image.Image, width, height int) image.Image {
-	// Target Dimension: width x height (Landscape)
-	// Each slot: (width/2) x height
-	slotWidth := width / 2
-
-	dst := image.NewRGBA(image.Rect(0, 0, width, height))
-
-	// Draw Left
-	imageops.DrawCover(dst, image.Rect(0, 0, slotWidth, height), img1)
-
-	// Draw Right
-	imageops.DrawCover(dst, image.Rect(slotWidth, 0, width, height), img2)
-
-	return dst
-}
-
-// fetchSynologyPhoto retrieves the photo from Synology Service
-func (h *ImageHandler) fetchSynologyPhoto(item model.Image) (image.Image, uint, error) {
-	// Try fetching cache first? Or direct from Service which handles fetching
-	data, err := h.synology.GetPhoto(item.SynologyPhotoID, item.ThumbnailKey, "large")
-	if err != nil {
-		return nil, 0, err
-	}
-
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		return nil, 0, err
-	}
-	return img, item.ID, nil
-}
-
-// resolvePath handles path differences between Docker (/data/...) and local dev
-func (h *ImageHandler) resolvePath(path string) string {
-	// 1. If path exists as is, return it
-	if _, err := os.Stat(path); err == nil {
-		return path
-	}
-
-	// 2. If path starts with /data/, try replacing it with h.dataDir
-	// Docker uses /data, local uses whatever DATA_DIR is (e.g. ./data)
-	if strings.HasPrefix(path, "/data/") {
-		relPath := strings.TrimPrefix(path, "/data/")
-		newPath := filepath.Join(h.dataDir, relPath)
-		if _, err := os.Stat(newPath); err == nil {
-			return newPath
-		}
-	}
-
-	// 3. Similar check for /app/data/ just in case
-	if strings.HasPrefix(path, "/app/data/") {
-		relPath := strings.TrimPrefix(path, "/app/data/")
-		newPath := filepath.Join(h.dataDir, relPath)
-		if _, err := os.Stat(newPath); err == nil {
-			return newPath
-		}
-	}
-
-	return path
-}
-
-// fetchRandomPhoto fetches a random photo from the given source, excluding
-// the given IDs. Falls back to ignoring exclusions if no match is found.
-func (h *ImageHandler) fetchRandomPhoto(sourceFilter string, excludeIDs []uint, deviceID *uint) (image.Image, uint, error) {
-	query := h.db.Order("RANDOM()")
-
-	if len(excludeIDs) > 0 {
-		query = query.Where("id NOT IN ?", excludeIDs)
-	}
-
-	query, earlyResult, err := h.applySourceFilter(query, sourceFilter, deviceID)
-	if earlyResult != nil || err != nil {
-		return earlyResult, 0, err
-	}
-
-	var item model.Image
-	if err := query.First(&item).Error; err != nil {
-		if len(excludeIDs) == 0 {
-			return nil, 0, err
-		}
-		// Retry without exclusions
-		retryQuery := h.db.Order("RANDOM()")
-		retryQuery, earlyResult, retryErr := h.applySourceFilter(retryQuery, sourceFilter, deviceID)
-		if earlyResult != nil || retryErr != nil {
-			return earlyResult, 0, retryErr
-		}
-		if err := retryQuery.First(&item).Error; err != nil {
-			return nil, 0, err
-		}
-	}
-
-	img, err := h.loadImageFromRecord(item)
-	if err != nil {
-		log.Printf("Warning: Failed to load image id=%d: %v", item.ID, err)
-		return nil, 0, err
-	}
-	return img, item.ID, nil
-}
-
-// applySourceFilter adds source-specific WHERE clauses to the query.
-// For URL proxy sources, it fetches the image directly and returns it as
-// earlyResult (the caller should return immediately).
-func (h *ImageHandler) applySourceFilter(query *gorm.DB, sourceFilter string, deviceID *uint) (*gorm.DB, image.Image, error) {
-	switch sourceFilter {
-	case model.SourceGooglePhotos, model.SourceSynologyPhotos, model.SourceGallery, model.SourceImmich:
-		return query.Where("source = ?", sourceFilter), nil, nil
-	case model.SourceURLProxy:
-		img, _, err := h.fetchRandomURLProxy(deviceID)
-		return nil, img, err
-	default:
-		return nil, nil, fmt.Errorf("invalid source filter: %s", sourceFilter)
-	}
-}
-
-// fetchRandomURLProxy picks a random URL source for the device and fetches it.
-func (h *ImageHandler) fetchRandomURLProxy(deviceID *uint) (image.Image, uint, error) {
-	var urlSource model.URLSource
-	subQuery := h.db.Table("url_sources").Select("url_sources.id, url_sources.url")
-	if deviceID != nil {
-		subQuery = subQuery.Joins("LEFT JOIN device_url_mappings ON url_sources.id = device_url_mappings.url_source_id").
-			Where("device_url_mappings.device_id = ? OR device_url_mappings.device_id IS NULL", *deviceID)
-	} else {
-		subQuery = subQuery.Joins("LEFT JOIN device_url_mappings ON url_sources.id = device_url_mappings.url_source_id").
-			Where("device_url_mappings.device_id IS NULL")
-	}
-	if err := subQuery.Order("RANDOM()").Limit(1).Scan(&urlSource).Error; err != nil {
-		return nil, 0, err
-	}
-	if urlSource.URL == "" {
-		return nil, 0, gorm.ErrRecordNotFound
-	}
-	return h.fetchURLPhoto(urlSource.URL)
-}
-
-// fetchImmichPhoto retrieves the photo from Immich Service
-func (h *ImageHandler) fetchImmichPhoto(item model.Image) (image.Image, uint, error) {
-	data, err := h.immich.DownloadPhoto(item.ImmichAssetID)
-	if err != nil {
-		return nil, 0, err
-	}
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		return nil, 0, err
-	}
-	return img, item.ID, nil
-}
-
-// loadImageFromRecord loads an image from a database record, handling both
-// local files and Synology/Immich photos.
-func (h *ImageHandler) loadImageFromRecord(item model.Image) (image.Image, error) {
-	if item.Source == model.SourceSynologyPhotos {
-		img, _, err := h.fetchSynologyPhoto(item)
-		return img, err
-	}
-
-	if item.Source == model.SourceImmich {
-		img, _, err := h.fetchImmichPhoto(item)
-		return img, err
-	}
-
-	resolvedPath := h.resolvePath(item.FilePath)
-	f, err := os.Open(resolvedPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open %s (resolved: %s): %w", item.FilePath, resolvedPath, err)
-	}
-	defer f.Close()
-
-	img, _, err := image.Decode(f)
-	return img, err
-}
-
-func (h *ImageHandler) fetchURLPhoto(url string) (image.Image, uint, error) {
-	// Fetch Image from URL
-	resp, err := http.Get(url)
-	if err != nil {
-		fmt.Printf("Failed to fetch URL photo: %v\n", err)
-		return nil, 0, err
-	}
-	defer resp.Body.Close()
-
-	img, _, err := image.Decode(resp.Body)
-	if err != nil {
-		fmt.Printf("Failed to decode URL photo: %v\n", err)
-		return nil, 0, err
-	}
-	// Return 0 as ID for URL sources
-	return img, 0, nil
 }

@@ -2087,6 +2087,8 @@ const sourceOptions = [
   { title: 'Synology Photos', value: 'synology_photos' },
   { title: 'URL Proxy', value: 'url_proxy' },
   { title: 'AI Generation', value: 'ai_generation' },
+  { title: 'Fractal (Mandelbrot zoom)', value: 'fractal' },
+  { title: 'DLA (diffusion-limited aggregation)', value: 'dla' },
 ];
 
 // URL Proxy State

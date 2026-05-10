@@ -18,6 +18,8 @@ const (
 	SourceURLProxy       = "url_proxy"
 	SourceAIGeneration   = "ai_generation"
 	SourceImmich         = "immich"
+	SourceFractal        = "fractal"
+	SourceDLA            = "dla"
 )
 
 type Image struct {
@@ -53,19 +55,19 @@ type GoogleCalendarAuth struct {
 }
 
 type Device struct {
-	ID            uint    `gorm:"primaryKey" json:"id"`
-	Name          string  `json:"name"`
-	Host          string  `gorm:"index" json:"host"` // IP or Hostname
-	Width         int     `json:"width"`
-	Height        int     `json:"height"`
-	Orientation   string  `json:"orientation"`
-	BoardName     string  `json:"board_name"`
-	EnableCollage bool    `json:"enable_collage"` // Per-device collage setting
-	ShowDate      bool    `json:"show_date"`
-	ShowPhotoDate bool    `json:"show_photo_date"`
-	ShowWeather   bool    `json:"show_weather"`
-	WeatherLat    float64 `json:"weather_lat"`
-	WeatherLon    float64 `json:"weather_lon"`
+	ID             uint    `gorm:"primaryKey" json:"id"`
+	Name           string  `json:"name"`
+	Host           string  `gorm:"index" json:"host"` // IP or Hostname
+	Width          int     `json:"width"`
+	Height         int     `json:"height"`
+	Orientation    string  `json:"orientation"`
+	BoardName      string  `json:"board_name"`
+	EnableCollage  bool    `json:"enable_collage"` // Per-device collage setting
+	ShowDate       bool    `json:"show_date"`
+	ShowPhotoDate  bool    `json:"show_photo_date"`
+	ShowWeather    bool    `json:"show_weather"`
+	WeatherLat     float64 `json:"weather_lat"`
+	WeatherLon     float64 `json:"weather_lon"`
 	AIProvider    string  `gorm:"column:ai_provider" json:"ai_provider"`
 	AIModel       string  `gorm:"column:ai_model" json:"ai_model"`
 	AIPrompt      string  `gorm:"column:ai_prompt" json:"ai_prompt"`
@@ -119,4 +121,14 @@ type URLSource struct {
 type DeviceURLMapping struct {
 	DeviceID    uint `gorm:"primaryKey" json:"device_id"`
 	URLSourceID uint `gorm:"primaryKey" json:"url_source_id"`
+}
+
+// GenerativeState persists the rolling state for a procedural image source
+// (fractal zoom counter, DLA occupancy grids, etc.). Keyed on (DeviceID, Source)
+// so a device can switch sources without losing its progress in either.
+type GenerativeState struct {
+	DeviceID  uint      `gorm:"primaryKey" json:"device_id"`
+	Source    string    `gorm:"primaryKey" json:"source"`
+	State     []byte    `json:"-"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
