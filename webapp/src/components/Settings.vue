@@ -553,6 +553,26 @@
                     ></v-text-field>
 
                     <v-row class="mt-2">
+                      <v-col cols="12">
+                        <v-select
+                          v-model="form.immich_source_mode"
+                          :items="immichSourceModeOptions"
+                          item-title="title"
+                          item-value="value"
+                          label="Sync Mode"
+                          variant="outlined"
+                          density="compact"
+                          hint="What to pull from Immich"
+                          persistent-hint
+                          @update:model-value="saveSettingsInternal()"
+                        ></v-select>
+                      </v-col>
+                    </v-row>
+
+                    <v-row
+                      v-if="form.immich_source_mode === 'album'"
+                      class="mt-2"
+                    >
                       <v-col cols="12" sm="8">
                         <v-select
                           v-model="form.immich_album_id"
@@ -2946,6 +2966,7 @@ const form = reactive({
   albums: [] as any[],
   immich_url: '',
   immich_api_key: '',
+  immich_source_mode: 'album',
   immich_album_id: '',
   immich_auto_sync_enabled: false,
   immich_auto_sync_interval_minutes: 60,
@@ -2965,6 +2986,13 @@ const synologyAlbumOptions = computed(() => {
 const immichAlbumOptions = computed(() => {
   return form.immich_albums.map((a: any) => ({ id: a.id, name: a.albumName }));
 });
+
+const immichSourceModeOptions = [
+  { title: 'One album', value: 'album' },
+  { title: 'Entire library', value: 'all' },
+  { title: 'Favorites only', value: 'favorites' },
+  { title: 'Memories (on this day)', value: 'memories' },
+];
 
 const autoSyncIntervalOptions = [
   { title: 'Every 15 minutes', value: 15 },
@@ -3023,6 +3051,7 @@ onMounted(async () => {
     synology_sid: store.settings.synology_sid || '',
     immich_url: store.settings.immich_url || '',
     immich_api_key: store.settings.immich_api_key || '',
+    immich_source_mode: store.settings.immich_source_mode || 'album',
     immich_album_id: store.settings.immich_album_id || '',
     immich_auto_sync_enabled:
       store.settings.immich_auto_sync_enabled === 'true',
@@ -3117,6 +3146,7 @@ const saveSettingsInternal = async () => {
     ),
     immich_url: form.immich_url,
     immich_api_key: form.immich_api_key,
+    immich_source_mode: form.immich_source_mode,
     immich_album_id: form.immich_album_id,
     immich_auto_sync_enabled: String(form.immich_auto_sync_enabled),
     immich_auto_sync_interval_minutes: String(
@@ -3313,6 +3343,7 @@ const disconnectImmich = async () => {
     return;
   form.immich_url = '';
   form.immich_api_key = '';
+  form.immich_source_mode = 'album';
   form.immich_album_id = '';
   form.immich_albums = [];
   await saveSettingsInternal();

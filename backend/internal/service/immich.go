@@ -32,7 +32,8 @@ func NewImmichService(db *gorm.DB, settings *SettingsService) *ImmichService {
 		Settings: settings,
 		IsRelevantKey: func(key string) bool {
 			switch key {
-			case "immich_auto_sync_enabled", "immich_auto_sync_interval_minutes", "immich_album_id", "immich_url", "immich_api_key":
+			case "immich_auto_sync_enabled", "immich_auto_sync_interval_minutes",
+				"immich_source_mode", "immich_album_id", "immich_url", "immich_api_key":
 				return true
 			default:
 				return false
@@ -51,11 +52,37 @@ func (s *ImmichService) StartAutoSync() {
 	s.autoSync.Start()
 }
 
+// Immich source modes — what the sync pulls from. See issue #32.
+const (
+	ImmichModeAlbum     = "album"     // photos from one configured album (default)
+	ImmichModeAll       = "all"       // entire library
+	ImmichModeFavorites = "favorites" // only assets marked as Favorite
+	ImmichModeMemories  = "memories"  // on-this-day across years
+)
+
+// immichSourceMode returns the configured sync mode, defaulting to album.
+func (s *ImmichService) immichSourceMode() string {
+	mode, _ := s.settings.Get("immich_source_mode")
+	switch mode {
+	case ImmichModeAll, ImmichModeFavorites, ImmichModeMemories:
+		return mode
+	default:
+		return ImmichModeAlbum
+	}
+}
+
 func (s *ImmichService) isAutoSyncConfigured() bool {
 	baseURL, _ := s.settings.Get("immich_url")
 	apiKey, _ := s.settings.Get("immich_api_key")
-	albumID, _ := s.settings.Get("immich_album_id")
-	return baseURL != "" && apiKey != "" && albumID != ""
+	if baseURL == "" || apiKey == "" {
+		return false
+	}
+	// Album mode is the only one that needs an album picked.
+	if s.immichSourceMode() == ImmichModeAlbum {
+		albumID, _ := s.settings.Get("immich_album_id")
+		return albumID != ""
+	}
+	return true
 }
 
 func (s *ImmichService) getAutoSyncConfig() (bool, time.Duration) {
@@ -112,20 +139,15 @@ func (s *ImmichService) ListAlbums() ([]immich.Album, error) {
 	return client.ListAlbums()
 }
 
-// ImportPhotos fetches image assets and adds them to the DB.
-// ImportPhotos fetches image assets from the configured album and adds them to the DB.
+// ImportPhotos fetches image assets according to the configured source
+// mode (album / all / favorites / memories) and adds them to the DB.
 func (s *ImmichService) ImportPhotos() error {
 	client, err := s.getClient()
 	if err != nil {
 		return err
 	}
 
-	albumID, _ := s.settings.Get("immich_album_id")
-	if albumID == "" {
-		return errors.New("please select an album to sync")
-	}
-
-	allAssets, err := client.GetAlbumAssets(albumID)
+	allAssets, err := s.fetchAssetsForMode(client)
 	if err != nil {
 		return err
 	}
@@ -181,6 +203,29 @@ func (s *ImmichService) ImportPhotos() error {
 
 	log.Printf("Immich ImportPhotos complete: inserted %d new photos (total assets: %d)", count, len(allAssets))
 	return nil
+}
+
+// fetchAssetsForMode dispatches to the right Immich client method for the
+// configured source mode. Returns the raw asset list — caller filters out
+// videos / RAW / duplicates and persists into the local DB.
+func (s *ImmichService) fetchAssetsForMode(client *immich.Client) ([]immich.Asset, error) {
+	switch s.immichSourceMode() {
+	case ImmichModeAlbum:
+		albumID, _ := s.settings.Get("immich_album_id")
+		if albumID == "" {
+			return nil, errors.New("please select an album to sync")
+		}
+		return client.GetAlbumAssets(albumID)
+	case ImmichModeAll:
+		return client.SearchAssets(immich.SearchMetadataRequest{})
+	case ImmichModeFavorites:
+		t := true
+		return client.SearchAssets(immich.SearchMetadataRequest{IsFavorite: &t})
+	case ImmichModeMemories:
+		return client.GetMemoryAssets()
+	default:
+		return nil, fmt.Errorf("unknown immich source mode: %q", s.immichSourceMode())
+	}
 }
 
 // ClearPhotos deletes all Immich photos from the database

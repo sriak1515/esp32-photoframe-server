@@ -1,6 +1,7 @@
 package immich
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -116,6 +117,82 @@ func (c *Client) GetThumbnail(assetID, size string) ([]byte, error) {
 		return nil, fmt.Errorf("thumbnail fetch returned status %d: %s", resp.StatusCode, string(body))
 	}
 	return io.ReadAll(resp.Body)
+}
+
+// doJSON is like do() but for POST bodies with a JSON payload.
+func (c *Client) doJSON(method, path string, body interface{}) (*http.Response, error) {
+	var buf bytes.Buffer
+	if body != nil {
+		if err := json.NewEncoder(&buf).Encode(body); err != nil {
+			return nil, err
+		}
+	}
+	req, err := http.NewRequest(method, c.BaseURL+path, &buf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("x-api-key", c.APIKey)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	return c.httpClient.Do(req)
+}
+
+// SearchAssets pages through POST /api/search/metadata until the server runs
+// out of results, returning every IMAGE asset that matched. Use the
+// pre-filled SearchMetadataRequest to pick a filter mode (favorites,
+// date-bound, etc.); the function fills in Type, Page, and Size itself.
+func (c *Client) SearchAssets(filter SearchMetadataRequest) ([]Asset, error) {
+	const pageSize = 250
+	filter.Type = "IMAGE"
+	filter.Size = pageSize
+
+	var out []Asset
+	for page := 1; ; page++ {
+		filter.Page = page
+		resp, err := c.doJSON("POST", "/api/search/metadata", filter)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return nil, fmt.Errorf("search returned status %d: %s", resp.StatusCode, string(b))
+		}
+		var body searchAssetsResponse
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			resp.Body.Close()
+			return nil, err
+		}
+		resp.Body.Close()
+		out = append(out, body.Assets.Items...)
+		if len(body.Assets.Items) < pageSize || body.Assets.NextPage == nil {
+			break
+		}
+	}
+	return out, nil
+}
+
+// GetMemoryAssets returns the flattened set of "on this day" assets — one
+// MemoryLane per past year that has a photo from this month/day.
+func (c *Client) GetMemoryAssets() ([]Asset, error) {
+	resp, err := c.do("GET", "/api/memories")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("memories returned status %d: %s", resp.StatusCode, string(b))
+	}
+	var lanes []MemoryLane
+	if err := json.NewDecoder(resp.Body).Decode(&lanes); err != nil {
+		return nil, err
+	}
+	var out []Asset
+	for _, lane := range lanes {
+		out = append(out, lane.Assets...)
+	}
+	return out, nil
 }
 
 // DownloadOriginal fetches the original full-resolution asset.
