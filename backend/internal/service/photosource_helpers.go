@@ -129,8 +129,14 @@ func smartCollage(
 		return img1, servedIDs, nil
 	}
 
+	// Each collage slot has the *opposite* shape of the device: a
+	// portrait device stacks two landscape-shaped slots vertically, a
+	// landscape device places two portrait-shaped slots side-by-side.
+	// We only reach this branch when the first photo's orientation
+	// differs from the device's, so the first photo already matches the
+	// slot shape — request a second photo of the same orientation.
 	targetType := "landscape"
-	if devicePortrait {
+	if isPhotoPortrait {
 		targetType = "portrait"
 	}
 
