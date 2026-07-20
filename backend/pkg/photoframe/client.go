@@ -319,6 +319,9 @@ type ProcessingSettings struct {
 	CompressDynamicRange bool    `json:"compressDynamicRange"`
 	ScaleMode            string  `json:"scaleMode"`
 	BackgroundColor      string  `json:"backgroundColor"`
+	Converter            string  `json:"converter"`
+	AutoMode             bool    `json:"autoMode"`
+	EpdOptimizePreset    string  `json:"epdOptimizePreset"`
 }
 
 type PaletteColor struct {
