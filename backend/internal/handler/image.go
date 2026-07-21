@@ -208,31 +208,12 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 		logicalW, logicalH = logicalH, logicalW
 	}
 
-	// Parse X-Processing-Settings early: the firmware's synced scaleMode
-	// decides the layout for both the overlay renderer and the converter.
+	// Load server-authoritative processing settings before deciding layout.
 	var settings *photoframe.ProcessingSettings
-	if settingsStr := c.Request().Header.Get("X-Processing-Settings"); settingsStr != "" {
+	if deviceFound && device.DeviceProcessingSettings != "" && device.DeviceProcessingSettings != "{}" {
 		settings = &photoframe.ProcessingSettings{}
-		if err := json.Unmarshal([]byte(settingsStr), settings); err != nil {
-			fmt.Printf("Failed to parse X-Processing-Settings header: %v\n", err)
+		if err := json.Unmarshal([]byte(device.DeviceProcessingSettings), settings); err != nil {
 			settings = nil
-		}
-	}
-
-	// During a pending config sync (the device hasn't pulled the latest
-	// server-side edit yet) the header carries the device's OLD layout;
-	// substitute the newer server-stored values so this render doesn't put a
-	// stale layout on the panel until the next rotation.
-	if deviceFound && settings != nil {
-		deviceTS, tsErr := strconv.ParseInt(c.Request().Header.Get("X-Config-Last-Updated"), 10, 64)
-		if tsErr == nil && deviceTS < device.ConfigLastUpdated {
-			if raw := strings.TrimSpace(device.DeviceProcessingSettings); raw != "" && raw != "{}" {
-				var stored photoframe.ProcessingSettings
-				if err := json.Unmarshal([]byte(raw), &stored); err == nil {
-					settings.ScaleMode = stored.ScaleMode
-					settings.BackgroundColor = stored.BackgroundColor
-				}
-			}
 		}
 	}
 
@@ -467,14 +448,13 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 		procOptions["format"] = "png"
 	}
 
-	// (X-Processing-Settings was parsed above, before the layout decision)
+	// Processing settings were loaded above because they also determine layout.
 
-	// 3.6. Parse X-Color-Palette header if present
+	// 3.6. Load color palette from the server-side database.
 	var palette *photoframe.Palette
-	if paletteStr := c.Request().Header.Get("X-Color-Palette"); paletteStr != "" {
+	if deviceFound && device.DeviceColorPalette != "" && device.DeviceColorPalette != "{}" {
 		palette = &photoframe.Palette{}
-		if err := json.Unmarshal([]byte(paletteStr), palette); err != nil {
-			fmt.Printf("Failed to parse X-Color-Palette header: %v\n", err)
+		if err := json.Unmarshal([]byte(device.DeviceColorPalette), palette); err != nil {
 			palette = nil
 		}
 	}
@@ -543,18 +523,17 @@ func (h *ImageHandler) SyncDeviceConfig(c echo.Context) error {
 		return respondError(c, http.StatusBadRequest, "invalid request")
 	}
 
-	// Store device's config in database
+	// Only accept the device's config and color palette when the device is
+	// newer than the server. Processing settings are never accepted — the
+	// server is the sole authority and pushes them via X-Config-Payload.
 	updates := map[string]interface{}{}
-	if len(req.Config) > 0 {
-		updates["device_config"] = string(req.Config)
-	}
-	if len(req.ProcessingSettings) > 0 {
-		updates["device_processing_settings"] = string(req.ProcessingSettings)
-	}
-	if len(req.ColorPalette) > 0 {
-		updates["device_color_palette"] = string(req.ColorPalette)
-	}
-	if req.ConfigLastUpdated > 0 {
+	if req.ConfigLastUpdated > device.ConfigLastUpdated {
+		if len(req.Config) > 0 {
+			updates["device_config"] = string(req.Config)
+		}
+		if len(req.ColorPalette) > 0 {
+			updates["device_color_palette"] = string(req.ColorPalette)
+		}
 		updates["config_last_updated"] = req.ConfigLastUpdated
 	}
 
@@ -809,9 +788,6 @@ func (h *ImageHandler) pullDeviceConfigAsync(device model.Device, deviceTS int64
 				updates := map[string]interface{}{
 					"device_config":       configRaw,
 					"config_last_updated": deviceTS,
-				}
-				if proc, perr := client.FetchProcessingSettings(); perr == nil {
-					updates["device_processing_settings"] = proc
 				}
 				if palette, perr := client.FetchPalette(); perr == nil {
 					updates["device_color_palette"] = palette
