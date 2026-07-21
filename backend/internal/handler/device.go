@@ -19,14 +19,16 @@ type DeviceHandler struct {
 	deviceService   *service.DeviceService
 	synologyService *service.SynologyService
 	immichService   *service.ImmichService
+	immichCache     *service.ImmichCacheService
 	db              *gorm.DB
 }
 
-func NewDeviceHandler(deviceService *service.DeviceService, synologyService *service.SynologyService, immichService *service.ImmichService, db *gorm.DB) *DeviceHandler {
+func NewDeviceHandler(deviceService *service.DeviceService, synologyService *service.SynologyService, immichService *service.ImmichService, immichCache *service.ImmichCacheService, db *gorm.DB) *DeviceHandler {
 	return &DeviceHandler{
 		deviceService:   deviceService,
 		synologyService: synologyService,
 		immichService:   immichService,
+		immichCache:     immichCache,
 		db:              db,
 	}
 }
@@ -201,25 +203,35 @@ func (h *DeviceHandler) PushToDevice(c echo.Context) error {
 			tmp.Close()
 			imagePath = tempFile
 		} else if img.Source == model.SourceImmich {
-			// Download from Immich to temporary file
-			data, err := h.immichService.DownloadPhoto(img.ExternalID)
-			if err != nil {
-				return respondError(c, http.StatusInternalServerError, fmt.Sprintf("failed to download immich photo: %v", err))
+			// Try local cache first — works even when Immich is offline.
+			if h.immichCache != nil && h.immichCache.Enabled() {
+				if cached := h.immichCache.Lookup(img.ID); cached != "" {
+					// Use the cached file directly
+					imagePath = cached
+				}
 			}
 
-			tmp, err := ioutil.TempFile("", "immich_push_*.jpg")
-			if err != nil {
-				return respondError(c, http.StatusInternalServerError, "failed to create temp file")
-			}
-			defer os.Remove(tmp.Name())
-			tempFile = tmp.Name()
+			// Fall back to Immich download if not cached
+			if imagePath == "" {
+				data, err := h.immichService.DownloadPhoto(img.ExternalID)
+				if err != nil {
+					return respondError(c, http.StatusInternalServerError, fmt.Sprintf("failed to download immich photo: %v", err))
+				}
 
-			if _, err := tmp.Write(data); err != nil {
+				tmp, err := ioutil.TempFile("", "immich_push_*.jpg")
+				if err != nil {
+					return respondError(c, http.StatusInternalServerError, "failed to create temp file")
+				}
+				defer os.Remove(tmp.Name())
+				tempFile = tmp.Name()
+
+				if _, err := tmp.Write(data); err != nil {
+					tmp.Close()
+					return respondError(c, http.StatusInternalServerError, "failed to write temp file")
+				}
 				tmp.Close()
-				return respondError(c, http.StatusInternalServerError, "failed to write temp file")
+				imagePath = tempFile
 			}
-			tmp.Close()
-			imagePath = tempFile
 		} else if strings.HasPrefix(img.FilePath, "http://") || strings.HasPrefix(img.FilePath, "https://") {
 			// Topic sources (unsplash, pexels) store a remote image URL in
 			// FilePath rather than a local file — fetch it to a temp file.
@@ -294,17 +306,21 @@ func (h *DeviceHandler) ListAlbums(c echo.Context) error {
 	// Report the LIVE photo count (memberships joined to existing images) rather
 	// than the cached Album.asset_count, which can go stale when images are
 	// removed (cleared, or an album emptied/deleted upstream). One grouped query
-	// instead of a COUNT per album.
+	// instead of a COUNT per album. When cached_only=true, count only images
+	// that have a local cache entry.
 	type albumCount struct {
 		AlbumID uint
 		N       int
 	}
 	var counts []albumCount
-	h.db.Model(&model.ImageAlbumMembership{}).
+	countQuery := h.db.Model(&model.ImageAlbumMembership{}).
 		Select("image_album_memberships.album_id as album_id, COUNT(*) as n").
-		Joins("JOIN images ON images.id = image_album_memberships.image_id AND images.deleted_at IS NULL").
-		Group("image_album_memberships.album_id").
-		Scan(&counts)
+		Joins("JOIN images ON images.id = image_album_memberships.image_id AND images.deleted_at IS NULL")
+	if c.QueryParam("cached_only") == "true" {
+		countQuery = countQuery.
+			Joins("JOIN immich_caches c ON c.image_id = images.id")
+	}
+	countQuery.Group("image_album_memberships.album_id").Scan(&counts)
 	countByID := make(map[uint]int, len(counts))
 	for _, cnt := range counts {
 		countByID[cnt.AlbumID] = cnt.N
