@@ -331,7 +331,7 @@ func main() {
 	protectedApi.PUT("/devices/:id/albums", deviceHandler.UpdateDeviceAlbums)
 
 	// Queue Management (Protected)
-	queueHandler := handler.NewQueueHandler(database, queueService)
+	queueHandler := handler.NewQueueHandler(database, queueService, immichCacheService)
 	protectedApi.GET("/devices/:deviceId/queue", queueHandler.ListQueue)
 	protectedApi.POST("/devices/:deviceId/queue", queueHandler.AddToQueue)
 	protectedApi.DELETE("/devices/:deviceId/queue/:itemId", queueHandler.RemoveFromQueue)
