@@ -11,6 +11,7 @@
         <v-tab value="pexels">Pexels</v-tab>
         <v-tab value="url">URL Proxy</v-tab>
         <v-tab value="ai_generation">AI Generation</v-tab>
+        <v-tab value="queue">Queue</v-tab>
       </v-tabs>
       <v-card-text>
         <div v-if="sourceHasGallery">
@@ -1109,6 +1110,11 @@
 
               <v-btn color="primary" @click="save">Save API Keys</v-btn>
             </v-card-text>
+          </v-window-item>
+
+          <!-- Queue -->
+          <v-window-item value="queue">
+            <QueueTab />
           </v-window-item>
         </v-window>
       </v-card-text>
@@ -2503,6 +2509,7 @@ import {
   googleCalendarLogout,
 } from '../api';
 import Gallery from './Gallery.vue';
+import QueueTab from './QueueTab.vue';
 import ConfirmDialog from './ConfirmDialog.vue';
 import AlbumPicker from './AlbumPicker.vue';
 import TopicManager from './TopicManager.vue';
@@ -4602,8 +4609,9 @@ const parseCachePriority = (s: string) => {
 };
 
 const serializeCachePriority = () => {
-  const entries = Object.entries(cachePriorityWeights)
-    .map(([k, v]) => `${k}=${v}`);
+  const entries = Object.entries(cachePriorityWeights).map(
+    ([k, v]) => `${k}=${v}`
+  );
   return entries.join(',') || 'favorites=50,recent=30,random=20';
 };
 
