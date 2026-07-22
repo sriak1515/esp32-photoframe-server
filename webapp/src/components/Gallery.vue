@@ -170,6 +170,20 @@
                 @click.stop="requestDeletePhoto(photo)"
               />
             </div>
+            <div class="queue-hotspot">
+              <v-btn
+                :icon="
+                  queuedImageIds.has(photo.id)
+                    ? 'mdi-check'
+                    : 'mdi-playlist-plus'
+                "
+                size="x-small"
+                :color="queuedImageIds.has(photo.id) ? 'success' : 'primary'"
+                class="queue-overlay"
+                elevation="2"
+                @click.stop="addToQueue(photo.id)"
+              />
+            </div>
           </v-card>
         </v-col>
       </v-row>
@@ -261,6 +275,52 @@
               @click="confirmPush"
             >
               Push
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
+      <!-- Device Picker Dialog for Queue -->
+      <v-dialog v-model="showDevicePickerDialog" max-width="400">
+        <v-card>
+          <v-card-title>Select Device for Queue</v-card-title>
+          <v-card-text>
+            <div v-if="loadingDevices" class="d-flex justify-center pa-4">
+              <v-progress-circular indeterminate></v-progress-circular>
+            </div>
+            <div v-else-if="devices.length === 0">
+              No devices found. Please add a device in Settings.
+            </div>
+            <div v-else>
+              <v-radio-group v-model="selectedDeviceForQueue" hide-details>
+                <v-radio
+                  v-for="dev in devices"
+                  :key="dev.id"
+                  :label="`${dev.name} (${dev.host})`"
+                  :value="dev.id"
+                ></v-radio>
+              </v-radio-group>
+
+              <v-checkbox
+                v-model="rememberDeviceForQueue"
+                label="Remember my choice"
+                density="compact"
+                hide-details
+                class="mt-2"
+              ></v-checkbox>
+            </div>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer></v-spacer>
+            <v-btn variant="text" @click="showDevicePickerDialog = false"
+              >Cancel</v-btn
+            >
+            <v-btn
+              color="primary"
+              :disabled="!selectedDeviceForQueue"
+              @click="confirmAddToQueue"
+            >
+              Select
             </v-btn>
           </v-card-actions>
         </v-card>
@@ -371,6 +431,21 @@
   opacity: 1;
 }
 
+.queue-hotspot {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 48px;
+  height: 48px;
+  z-index: 1;
+}
+
+.queue-overlay {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+}
+
 .confirm-thumb {
   max-width: 100%;
   max-height: 60vh;
@@ -389,10 +464,24 @@
 import { onMounted, onUnmounted, ref, reactive, computed, watch } from 'vue';
 import { useAuthStore } from '../stores/auth';
 import { useGalleryStore } from '../stores/gallery';
+import { useQueueStore } from '../stores/queue';
+import { useDefaultDevice } from '../composables/useDefaultDevice';
 import { api, listDevices, pushToDevice, type Device } from '../api';
+import { useSnackbar } from '../composables/useSnackbar';
 
 const authStore = useAuthStore();
 const galleryStore = useGalleryStore();
+const queueStore = useQueueStore();
+const { defaultDeviceId, setDefaultDevice, activeQueueDeviceId } =
+  useDefaultDevice();
+const { showMessage } = useSnackbar();
+
+// Queue state
+const queuedImageIds = ref(new Set<number>());
+const showDevicePickerDialog = ref(false);
+const selectedDeviceForQueue = ref<number | null>(null);
+const rememberDeviceForQueue = ref(false);
+const pendingQueueImageId = ref<number | null>(null);
 
 // Album chips (only shown for Immich / Synology sources).
 const albumChips = ref<any[]>([]);
@@ -642,6 +731,79 @@ const getThumbnailUrl = (url: string) => {
   const separator = url.includes('?') ? '&' : '?';
   return `${url}${separator}token=${token}`;
 };
+
+// Queue functions
+const addToQueue = async (imageId: number) => {
+  if (!defaultDeviceId.value) {
+    // Store the image ID and show device picker dialog
+    pendingQueueImageId.value = imageId;
+    loadingDevices.value = true;
+    showDevicePickerDialog.value = true;
+    try {
+      const list = await listDevices();
+      devices.value = list;
+    } catch (e) {
+      console.error('Failed to load devices', e);
+    } finally {
+      loadingDevices.value = false;
+    }
+    return;
+  }
+
+  try {
+    await queueStore.addToQueue(defaultDeviceId.value, [imageId]);
+    queuedImageIds.value.add(imageId);
+    showMessage('Added to queue');
+  } catch {
+    showMessage('Failed to add to queue', true);
+  }
+};
+
+const confirmAddToQueue = async () => {
+  if (!selectedDeviceForQueue.value) return;
+
+  if (rememberDeviceForQueue.value) {
+    setDefaultDevice(selectedDeviceForQueue.value);
+  }
+
+  const deviceId = selectedDeviceForQueue.value;
+  showDevicePickerDialog.value = false;
+
+  // Add the pending image to queue
+  if (pendingQueueImageId.value) {
+    try {
+      await queueStore.addToQueue(deviceId, [pendingQueueImageId.value]);
+      queuedImageIds.value.add(pendingQueueImageId.value);
+      showMessage('Added to queue');
+    } catch {
+      showMessage('Failed to add to queue', true);
+    }
+    pendingQueueImageId.value = null;
+  }
+};
+
+// Check which images are already queued
+const checkQueuedStatus = async () => {
+  const deviceId = activeQueueDeviceId.value || defaultDeviceId.value;
+  if (!deviceId || galleryStore.photos.length === 0) return;
+
+  const imageIds = galleryStore.photos.map((p: any) => p.id);
+  const queued = await queueStore.checkQueued(deviceId, imageIds);
+  queuedImageIds.value = new Set(queued);
+};
+
+// Watch for gallery changes to update queued status
+watch(
+  () => galleryStore.photos,
+  () => {
+    checkQueuedStatus();
+  }
+);
+
+// Re-check when active queue device changes
+watch(activeQueueDeviceId, () => {
+  checkQueuedStatus();
+});
 
 onMounted(async () => {
   // store.fetchSettings() is called by parent (Settings.vue) or app init.

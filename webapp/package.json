@@ -20,6 +20,7 @@
     "pinia": "^2.1.7",
     "vue": "^3.3.11",
     "vue-router": "^4.2.5",
+    "vuedraggable": "^4.1.0",
     "vuetify": "^3.11.8"
   },
   "devDependencies": {
