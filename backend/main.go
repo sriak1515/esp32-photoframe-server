@@ -245,6 +245,8 @@ func main() {
 	pexelsSync := handler.NewPhotoSyncHandler(pexelsService)
 	pexelsTopics := handler.NewTopicSourceHandler(pexelsService)
 	gh := handler.NewGalleryHandler(database, synologyService, immichService, dataDir)
+	queueService := service.NewQueueService(database)
+	queueImageLoader := service.NewQueueImageLoader(database, dataDir, immichService, immichCacheService, synologyService)
 	ih := handler.NewImageHandler(handler.ImageHandlerDeps{
 		Settings:       settingsService,
 		Renderer:       rendererService,
@@ -256,6 +258,8 @@ func main() {
 		Auth:           authService,
 		DB:             database,
 		DataDir:        dataDir,
+		QueueService:   queueService,
+		QueueLoader:    queueImageLoader,
 	})
 	ch := handler.NewCalendarHandler(googleCalendarClient, calendarClient)
 	ah := handler.NewAuthHandler(authService, settingsService)
@@ -325,6 +329,16 @@ func main() {
 	protectedApi.PUT("/devices/:id/config", ih.UpdateDeviceConfig)
 	protectedApi.GET("/devices/:id/albums", deviceHandler.GetDeviceAlbums)
 	protectedApi.PUT("/devices/:id/albums", deviceHandler.UpdateDeviceAlbums)
+
+	// Queue Management (Protected)
+	queueHandler := handler.NewQueueHandler(database, queueService)
+	protectedApi.GET("/devices/:deviceId/queue", queueHandler.ListQueue)
+	protectedApi.POST("/devices/:deviceId/queue", queueHandler.AddToQueue)
+	protectedApi.DELETE("/devices/:deviceId/queue/:itemId", queueHandler.RemoveFromQueue)
+	protectedApi.DELETE("/devices/:deviceId/queue", queueHandler.ClearQueue)
+	protectedApi.PUT("/devices/:deviceId/queue/reorder", queueHandler.ReorderQueue)
+	protectedApi.GET("/devices/:deviceId/queue/status", queueHandler.QueueStatus)
+	protectedApi.POST("/devices/:deviceId/queue/check", queueHandler.CheckQueue)
 
 	// Source albums (persisted), shared by device picker + gallery
 	protectedApi.GET("/albums", deviceHandler.ListAlbums)
