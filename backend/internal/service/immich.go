@@ -346,22 +346,66 @@ func (s *ImmichService) ImportPhotos() error {
 }
 
 // fetchAssetsForAlbum returns the assets for one album — a real Immich album
-// or a virtual mode album (all / favorites / memories).
+// or a virtual mode album (all / favorites / memories). The configured date
+// range filter is applied server-side for virtual albums (which use the search
+// API) and client-side for real albums (whose endpoint lacks date params).
 func (s *ImmichService) fetchAssetsForAlbum(client *immich.Client, album model.Album) ([]immich.Asset, error) {
+	dateFrom, dateTo := s.DateRange()
+
 	if album.Kind == model.AlbumKindVirtual {
 		switch album.ExternalID {
 		case model.ImmichVirtualAll:
-			return client.SearchAssets(immich.SearchMetadataRequest{})
+			filter := immich.SearchMetadataRequest{Type: "IMAGE"}
+			if !dateFrom.IsZero() {
+				filter.TakenAfter = dateFrom.Format(time.RFC3339)
+			}
+			if !dateTo.IsZero() {
+				filter.TakenBefore = dateTo.Format(time.RFC3339)
+			}
+			return client.SearchAssets(filter)
 		case model.ImmichVirtualFavorites:
 			t := true
-			return client.SearchAssets(immich.SearchMetadataRequest{IsFavorite: &t})
+			filter := immich.SearchMetadataRequest{Type: "IMAGE", IsFavorite: &t}
+			if !dateFrom.IsZero() {
+				filter.TakenAfter = dateFrom.Format(time.RFC3339)
+			}
+			if !dateTo.IsZero() {
+				filter.TakenBefore = dateTo.Format(time.RFC3339)
+			}
+			return client.SearchAssets(filter)
 		case model.ImmichVirtualMemories:
 			return client.GetMemoryAssets(s.immichMemoryMode() == ImmichMemoryModeLatest)
 		default:
 			return nil, fmt.Errorf("unknown virtual album: %q", album.ExternalID)
 		}
 	}
-	return client.GetAlbumAssets(album.ExternalID)
+
+	// Real album: the v2 GET /api/albums endpoint doesn't support date
+	// filtering, so fetch all and filter client-side.
+	all, err := client.GetAlbumAssets(album.ExternalID)
+	if err != nil {
+		return nil, err
+	}
+	if dateFrom.IsZero() && dateTo.IsZero() {
+		return all, nil
+	}
+	out := make([]immich.Asset, 0, len(all))
+	for _, a := range all {
+		ts := parseImmichDate(a.ExifInfo.DateTimeOriginal)
+		if ts == nil {
+			ts = parseImmichDate(a.LocalDateTime)
+		}
+		if ts != nil {
+			if !dateFrom.IsZero() && ts.Before(dateFrom) {
+				continue
+			}
+			if !dateTo.IsZero() && ts.After(dateTo) {
+				continue
+			}
+		}
+		out = append(out, a)
+	}
+	return out, nil
 }
 
 // ensureGlobalAlbumSeed materializes the legacy global immich_source_mode /
