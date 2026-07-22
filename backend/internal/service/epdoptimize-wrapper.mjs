@@ -42,6 +42,7 @@ function parseArgs(argv) {
     palette: null,
     settings: "{}",
     orientation: null,
+    scaleMode: "cover",
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -66,6 +67,9 @@ function parseArgs(argv) {
         break;
       case "--orientation":
         result.orientation = args[++i];
+        break;
+      case "--scale-mode":
+        result.scaleMode = args[++i];
         break;
       default:
         if (!result.input) {
@@ -173,57 +177,95 @@ function generateThumbnail(sourceCanvas, maxWidth = 200) {
 
 // ── Image loading and scaling ─────────────────────────────────────────────────
 
-async function loadAndScale(inputPath, targetW, targetH, orientation) {
+async function loadAndScale(inputPath, targetW, targetH, orientation, scaleMode) {
   const img = await loadImage(inputPath);
 
   let srcW = img.width;
   let srcH = img.height;
 
-  // Target dimensions are always in native panel layout (landscape).
-  // For portrait orientation, swap to process at portrait dimensions,
-  // then rotate the output back to native landscape layout.
+  // Target dimensions are always in native panel layout (physical panel dims).
+  // When the device orientation doesn't match the native panel aspect ratio,
+  // we swap dimensions to process at the oriented size, then rotate the output
+  // back to native layout.
+  //
+  // Examples:
+  //   - Native landscape (1600x1200), portrait orientation → swap to 1200x1600
+  //   - Native portrait  (1200x1600), landscape orientation → swap to 1600x1200
   let rotated = false;
-  if (
-    orientation &&
-    (orientation.includes("portrait") || orientation === "portrait-upside-down")
-  ) {
-    // Swap target dimensions for portrait processing
-    [targetW, targetH] = [targetH, targetW];
-    rotated = true;
+  const nativeIsLandscape = targetW > targetH;
+  if (nativeIsLandscape) {
+    // Native is landscape: swap for portrait orientations
+    if (
+      orientation &&
+      (orientation.includes("portrait") || orientation === "portrait-upside-down")
+    ) {
+      [targetW, targetH] = [targetH, targetW];
+      rotated = true;
+    }
+  } else {
+    // Native is portrait: swap for landscape orientations
+    if (
+      orientation &&
+      (orientation === "landscape" || orientation === "landscape-upside-down")
+    ) {
+      [targetW, targetH] = [targetH, targetW];
+      rotated = true;
+    }
   }
 
   const canvas = createCanvas(targetW, targetH);
   const ctx = canvas.getContext("2d");
 
-  // Cover-crop: fill the target area
-  const srcAspect = srcW / srcH;
-  const dstAspect = targetW / targetH;
+  if (scaleMode === "fit") {
+    // Fit mode: scale to fit within target, fill remaining with white background
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, targetW, targetH);
 
-  let sx, sy, sw, sh;
-  if (srcAspect > dstAspect) {
-    sh = srcH;
-    sw = srcH * dstAspect;
-    sx = (srcW - sw) / 2;
-    sy = 0;
+    const srcAspect = srcW / srcH;
+    const dstAspect = targetW / targetH;
+    let dw, dh;
+    if (srcAspect > dstAspect) {
+      dw = targetW;
+      dh = targetW / srcAspect;
+    } else {
+      dh = targetH;
+      dw = targetH * srcAspect;
+    }
+    const dx = (targetW - dw) / 2;
+    const dy = (targetH - dh) / 2;
+    ctx.drawImage(img, dx, dy, dw, dh);
   } else {
-    sw = srcW;
-    sh = srcW / dstAspect;
-    sx = 0;
-    sy = (srcH - sh) / 2;
-  }
+    // Cover mode (default): fill the target area via center-crop
+    const srcAspect = srcW / srcH;
+    const dstAspect = targetW / targetH;
 
-  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH);
+    let sx, sy, sw, sh;
+    if (srcAspect > dstAspect) {
+      sh = srcH;
+      sw = srcH * dstAspect;
+      sx = (srcW - sw) / 2;
+      sy = 0;
+    } else {
+      sw = srcW;
+      sh = srcW / dstAspect;
+      sx = 0;
+      sy = (srcH - sh) / 2;
+    }
+
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH);
+  }
 
   // Rotate back to native panel layout if needed
   if (rotated) {
-    const nativeW = img.width > img.height ? img.width : img.height;
-    const nativeH = img.width > img.height ? img.height : img.width;
-    // Re-read actual canvas dimensions (targetW/targetH are portrait now)
+    // Re-read actual canvas dimensions (targetW/targetH are oriented now)
     const pw = targetW;
     const ph = targetH;
     const rotatedCanvas = createCanvas(ph, pw);
     const rctx = rotatedCanvas.getContext("2d");
-    if (orientation === "portrait-upside-down") {
+    if (
+      orientation === "portrait-upside-down" ||
+      orientation === "landscape-upside-down"
+    ) {
       rctx.translate(ph, pw);
       rctx.rotate(Math.PI);
     } else {
@@ -377,7 +419,7 @@ async function main() {
   }
 
   // Load and scale image (handles orientation rotation back to native layout)
-  const { canvas: sourceCanvas } = await loadAndScale(opts.input, targetW, targetH, opts.orientation);
+  const { canvas: sourceCanvas } = await loadAndScale(opts.input, targetW, targetH, opts.orientation, opts.scaleMode);
 
   // Resolve palette
   const palette = resolvePalette(opts);
