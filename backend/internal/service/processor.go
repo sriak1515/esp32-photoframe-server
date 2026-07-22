@@ -234,11 +234,15 @@ func (s *ProcessorService) processWithEpdOptimize(inputPath string, options map[
 	}
 
 	// Save orientation before deleting it — needed later for EPDGZ encoding.
-	epdgzOrientation := ""
 	if o, ok := options["orientation"]; ok {
 		args = append(args, "--orientation", o)
-		epdgzOrientation = o
 		delete(options, "orientation")
+	}
+
+	// Forward scale-mode to the wrapper
+	if sm, ok := options["scale-mode"]; ok {
+		args = append(args, "--scale-mode", sm)
+		delete(options, "scale-mode")
 	}
 
 	// Pass palette data if present (raw palette JSON from epaper-image-convert format)
@@ -275,6 +279,8 @@ func (s *ProcessorService) processWithEpdOptimize(inputPath string, options map[
 	}
 
 	// If EPDGZ format is needed, convert PNG → EPDGZ via epaper-image-convert
+	// Note: orientation is NOT re-passed here. The wrapper already rotates the
+	// output to native panel layout, so re-passing orientation would double-rotate.
 	var processedBytes []byte
 	if format == "epdgz" {
 		epdgzPath := filepath.Join(tmpDir, "output.epdgz")
@@ -282,9 +288,6 @@ func (s *ProcessorService) processWithEpdOptimize(inputPath string, options map[
 		convertArgs := []string{outputPath, epdgzPath, "-f", "epdgz"}
 		if dim != "" {
 			convertArgs = append(convertArgs, "-d", dim)
-		}
-		if epdgzOrientation != "" {
-			convertArgs = append(convertArgs, "--orientation", epdgzOrientation)
 		}
 		convertArgs = append(convertArgs, "-v")
 
