@@ -474,6 +474,26 @@ func (s *ImmichCacheService) gcOrphanCacheFiles() {
 	}
 }
 
+// CacheForQueue downloads and caches an image for queue use. Designed to be
+// called in a goroutine; errors are logged but not returned.
+func (s *ImmichCacheService) CacheForQueue(imageID uint) {
+	if s.Lookup(imageID) != "" {
+		return
+	}
+	var img model.Image
+	if err := s.db.First(&img, imageID).Error; err != nil {
+		return
+	}
+	if img.ExternalID == "" {
+		return
+	}
+	if _, err := s.CacheImage(imageID, img.ExternalID); err != nil {
+		log.Printf("[immich-cache] queue pre-cache failed for image %d: %v", imageID, err)
+		return
+	}
+	s.prune()
+}
+
 // ClearCache deletes all cached images from disk and the database.
 func (s *ImmichCacheService) ClearCache() error {
 	var entries []model.ImmichCache

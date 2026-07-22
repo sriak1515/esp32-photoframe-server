@@ -12,12 +12,13 @@ import (
 )
 
 type QueueHandler struct {
-	db        *gorm.DB
-	queue     *service.QueueService
+	db          *gorm.DB
+	queue       *service.QueueService
+	immichCache *service.ImmichCacheService
 }
 
-func NewQueueHandler(db *gorm.DB, queue *service.QueueService) *QueueHandler {
-	return &QueueHandler{db: db, queue: queue}
+func NewQueueHandler(db *gorm.DB, queue *service.QueueService, immichCache *service.ImmichCacheService) *QueueHandler {
+	return &QueueHandler{db: db, queue: queue, immichCache: immichCache}
 }
 
 func (h *QueueHandler) getDeviceID(c echo.Context) (uint, error) {
@@ -123,6 +124,16 @@ func (h *QueueHandler) AddToQueue(c echo.Context) error {
 	items, warning, err := h.queue.Add(deviceID, req.ImageIDs)
 	if err != nil {
 		return respondError(c, http.StatusInternalServerError, "failed to add to queue")
+	}
+
+	// Pre-cache Immich images when cache mode is off so queued items are
+	// available even if the Immich server goes offline before consumption.
+	if h.immichCache != nil && !h.immichCache.Enabled() {
+		for _, item := range items {
+			if item.Source == model.SourceImmich {
+				go h.immichCache.CacheForQueue(item.ImageID)
+			}
+		}
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
