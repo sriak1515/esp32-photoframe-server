@@ -46,6 +46,8 @@ type ImageHandlerDeps struct {
 	Auth           *service.AuthService
 	DB             *gorm.DB
 	DataDir        string
+	QueueService   *service.QueueService
+	QueueLoader    *service.QueueImageLoader
 }
 
 type ImageHandler struct {
@@ -59,6 +61,8 @@ type ImageHandler struct {
 	auth           *service.AuthService
 	db             *gorm.DB
 	dataDir        string
+	queueService   *service.QueueService
+	queueLoader    *service.QueueImageLoader
 }
 
 func NewImageHandler(deps ImageHandlerDeps) *ImageHandler {
@@ -73,6 +77,8 @@ func NewImageHandler(deps ImageHandlerDeps) *ImageHandler {
 		auth:           deps.Auth,
 		db:             deps.DB,
 		dataDir:        deps.DataDir,
+		queueService:   deps.QueueService,
+		queueLoader:    deps.QueueLoader,
 	}
 }
 
@@ -221,6 +227,7 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 	displayMode := "cover"
 	backgroundColor := ""
 	showCalendar := false
+	firmwareVersion := c.Request().Header.Get("X-Firmware-Version")
 
 	if deviceFound {
 		if device.Layout != "" {
@@ -239,6 +246,59 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 	}
 	if settings != nil && settings.BackgroundColor != "" {
 		backgroundColor = settings.BackgroundColor
+	}
+
+	// 1.2. Check queue first — serve queued images before falling back to source
+	if deviceFound && h.queueService != nil && h.queueLoader != nil {
+		queueItem, err := h.queueService.GetNextForDevice(device.ID)
+		if err != nil {
+			log.Printf("Queue check failed for device %d: %v", device.ID, err)
+		} else if queueItem != nil {
+			// Load image from queue
+			img, loadErr := h.queueLoader.Load(queueItem)
+			if loadErr != nil {
+				// Image may have been deleted; remove from queue and fall through to source
+				log.Printf("Queue image load failed for device %d, image %d: %v", device.ID, queueItem.ImageID, loadErr)
+				h.queueService.RemoveByImageID(device.ID, queueItem.ImageID)
+			} else {
+				// Get photo taken at
+				var photoTakenAt *time.Time
+				if device.ShowPhotoDate && queueItem.Image != nil {
+					photoTakenAt = queueItem.Image.PhotoTakenAt
+				}
+
+				// Remove from queue (consumed)
+				go h.queueService.Remove(device.ID, queueItem.ID)
+
+				// Record history
+				if len([]uint{queueItem.ImageID}) > 0 {
+					go func(devID uint, imgIDs []uint) {
+						rows := make([]model.DeviceHistory, 0, len(imgIDs))
+						now := time.Now()
+						for _, imgID := range imgIDs {
+							if imgID == 0 {
+								continue
+							}
+							rows = append(rows, model.DeviceHistory{
+								DeviceID: devID,
+								ImageID:  imgID,
+								ServedAt: now,
+							})
+						}
+						if len(rows) == 0 {
+							return
+						}
+						h.db.Create(&rows)
+					}(device.ID, []uint{queueItem.ImageID})
+				}
+
+				// Build response from queue item
+				return h.serveProcessedImage(c, device, deviceFound, img, photoTakenAt,
+					logicalW, logicalH, nativeW, nativeH, orientation, layout, displayMode,
+					showDate, showPhotoDate, showWeather, lat, lon, showCalendar,
+					device.DateFormat, firmwareVersion)
+			}
+		}
 	}
 
 	var img image.Image
@@ -443,7 +503,7 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 	}
 
 	// Determine output format based on firmware version (epdgz requires >= 2.6.1)
-	firmwareVersion := c.Request().Header.Get("X-Firmware-Version")
+	firmwareVersion = c.Request().Header.Get("X-Firmware-Version")
 	if firmwareVersion == "" || !photoframe.SupportsEPDGZ(firmwareVersion) {
 		procOptions["format"] = "png"
 	}
@@ -828,4 +888,155 @@ func rotate90CW(src image.Image) *image.RGBA {
 		}
 	}
 	return dst
+}
+
+// serveProcessedImage handles the post-processing pipeline (overlay rendering,
+// e-paper processing, response writing) for both queue and source paths.
+func (h *ImageHandler) serveProcessedImage(
+	c echo.Context,
+	device model.Device,
+	deviceFound bool,
+	img image.Image,
+	photoTakenAt *time.Time,
+	logicalW, logicalH, nativeW, nativeH int,
+	orientation, layout, displayMode string,
+	showDate, showPhotoDate, showWeather bool,
+	lat, lon float64,
+	showCalendar bool,
+	dateFormat, firmwareVersion string,
+) error {
+	// 2. Render layout (photo + overlay + calendar)
+	needsOverlay := showDate || showPhotoDate || showWeather || showCalendar
+	var imgWithOverlay image.Image
+
+	if needsOverlay {
+		var weatherData *weather.CurrentWeather
+		var deviceTimezone string
+		if showWeather && lat != 0 && lon != 0 {
+			latStr := fmt.Sprintf("%f", lat)
+			lonStr := fmt.Sprintf("%f", lon)
+			var weatherErr error
+			weatherData, weatherErr = h.weather.GetWeather(latStr, lonStr)
+			if weatherErr != nil {
+				log.Printf("Failed to fetch weather data: %v", weatherErr)
+			}
+			if weatherData != nil {
+				deviceTimezone = weatherData.Timezone
+			}
+		}
+
+		var events []gcalendar.Event
+		if showCalendar && h.calendar != nil && h.calendarGoogle != nil {
+			httpClient, err := h.calendarGoogle.GetClient()
+			if err == nil {
+				calendarID := device.CalendarID
+				if calendarID == "" {
+					calendarID = "primary"
+				}
+				var calErr error
+				events, calErr = h.calendar.GetTodayEvents(httpClient, calendarID, deviceTimezone)
+				if calErr != nil {
+					log.Printf("Failed to fetch calendar events: %v", calErr)
+				}
+			}
+		}
+
+		var renderErr error
+		imgWithOverlay, renderErr = h.renderer.Render(service.RenderOptions{
+			Layout:        layout,
+			DisplayMode:   displayMode,
+			Width:         logicalW,
+			Height:        logicalH,
+			NativeWidth:   nativeW,
+			NativeHeight:  nativeH,
+			Photo:         img,
+			ShowDate:      showDate,
+			ShowPhotoDate: showPhotoDate,
+			PhotoDate:     photoTakenAt,
+			ShowWeather:   showWeather,
+			Weather:       weatherData,
+			ShowCalendar:  showCalendar,
+			Events:        events,
+			Timezone:      deviceTimezone,
+			DateFormat:    dateFormat,
+		})
+		if renderErr != nil {
+			return respondError(c, http.StatusInternalServerError, "render failed: "+renderErr.Error())
+		}
+	} else {
+		imgWithOverlay = img
+	}
+
+	// 3. Tone Mapping + Thumbnail (CLI)
+	procOptions := map[string]string{
+		"dimension": fmt.Sprintf("%dx%d", nativeW, nativeH),
+	}
+	if orientation != "" {
+		procOptions["orientation"] = orientation
+	}
+	procOptions["scale-mode"] = displayMode
+	if displayMode == "fit" && deviceFound && device.BackgroundColor != "" {
+		procOptions["background-color"] = device.BackgroundColor
+	}
+
+	if firmwareVersion == "" || !photoframe.SupportsEPDGZ(firmwareVersion) {
+		procOptions["format"] = "png"
+	}
+
+	// 3.5. Load processing settings from the server-side database
+	var settings *photoframe.ProcessingSettings
+	if deviceFound && device.DeviceProcessingSettings != "" && device.DeviceProcessingSettings != "{}" {
+		settings = &photoframe.ProcessingSettings{}
+		if err := json.Unmarshal([]byte(device.DeviceProcessingSettings), settings); err != nil {
+			settings = nil
+		}
+	}
+
+	// 3.6. Load color palette from the server-side database
+	var palette *photoframe.Palette
+	if deviceFound && device.DeviceColorPalette != "" && device.DeviceColorPalette != "{}" {
+		palette = &photoframe.Palette{}
+		if err := json.Unmarshal([]byte(device.DeviceColorPalette), palette); err != nil {
+			palette = nil
+		}
+	}
+
+	grayscale := deviceFound && device.IsGrayscale()
+
+	headerOpts := h.processor.MapProcessingSettings(settings, palette, grayscale)
+	for k, v := range headerOpts {
+		procOptions[k] = v
+	}
+
+	log.Println("Processing image with options: ", procOptions)
+	processedBytes, thumbBytes, err := h.processor.ProcessImage(imgWithOverlay, procOptions)
+	if err != nil {
+		fmt.Printf("Processor failed: %v\n", err)
+		return respondError(c, http.StatusInternalServerError, "processor service failed: "+err.Error())
+	}
+
+	// 4. Cache Thumbnail & Set Headers
+	if thumbBytes != nil {
+		thumbID := fmt.Sprintf("%d", time.Now().UnixNano())
+		thumbPath := filepath.Join(h.dataDir, fmt.Sprintf("thumb_%s.jpg", thumbID))
+
+		if err := os.WriteFile(thumbPath, thumbBytes, 0644); err == nil {
+			thumbnailUrl := fmt.Sprintf("%s/served-image-thumbnail/%s", h.deviceBaseURL(c), thumbID)
+			c.Response().Header().Set("X-Thumbnail-URL", thumbnailUrl)
+		} else {
+			fmt.Printf("Failed to save served thumbnail: %v\n", err)
+		}
+	}
+
+	// 5. Config Sync: push config payload if server has newer config
+	h.applyConfigSync(c, &device, deviceFound)
+
+	// Set Content-Length header
+	c.Response().Header().Set("Content-Length", fmt.Sprintf("%d", len(processedBytes)))
+
+	contentType := "application/octet-stream"
+	if firmwareVersion == "" || !photoframe.SupportsEPDGZ(firmwareVersion) {
+		contentType = "image/png"
+	}
+	return c.Blob(http.StatusOK, contentType, processedBytes)
 }

@@ -195,3 +195,22 @@ type GenerativeState struct {
 	State     []byte    `json:"-"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+// DeviceQueueItem represents a single image in a device's play queue.
+// Items are served FIFO (lowest position first) and removed after serving.
+type DeviceQueueItem struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	DeviceID  uint      `gorm:"not null;index:idx_device_queue_device_position,priority:1;index:idx_device_queue_device_image,priority:1" json:"device_id"`
+	ImageID   uint      `gorm:"not null;index:idx_device_queue_device_image,priority:2" json:"image_id"`
+	Position  int       `gorm:"not null;default:0;index:idx_device_queue_device_position,priority:2" json:"position"`
+	Source    string    `gorm:"not null;default:''" json:"source"`
+	CreatedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
+
+	// Relations
+	Device Device `gorm:"foreignKey:DeviceID" json:"device,omitempty"`
+	Image  *Image `gorm:"foreignKey:ImageID" json:"image,omitempty"`
+}
+
+func (DeviceQueueItem) TableName() string {
+	return "device_image_queue"
+}
