@@ -1,4 +1,4 @@
-ARG BUILD_FROM=node:20-alpine3.21
+ARG BUILD_FROM=node:22-alpine3.21
 
 # Build Stage for Go
 FROM golang:alpine AS builder
@@ -22,7 +22,7 @@ RUN CGO_ENABLED=1 go build \
     -o photoframe-server ./backend
 
 # Build Stage for Frontend
-FROM node:20-alpine AS frontend-builder
+FROM node:22-alpine AS frontend-builder
 ARG ADDON_PORT=9607
 WORKDIR /app
 COPY webapp/package*.json ./

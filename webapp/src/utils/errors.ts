@@ -4,7 +4,6 @@
 // pattern that was duplicated across stores and components.
 export function getApiError(e: unknown, fallback = 'Request failed'): string {
   const err = e as
-    | { response?: { data?: { error?: string } }; message?: string }
-    | undefined;
+    { response?: { data?: { error?: string } }; message?: string } | undefined;
   return err?.response?.data?.error || err?.message || fallback;
 }
