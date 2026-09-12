@@ -50,17 +50,17 @@ func (h *QueueHandler) ListQueue(c echo.Context) error {
 
 	// Build response with thumbnail URLs
 	type QueueItemResponse struct {
-		ID        uint      `json:"id"`
-		DeviceID  uint      `json:"device_id"`
-		ImageID   uint      `json:"image_id"`
-		Position  int       `json:"position"`
-		Source    string    `json:"source"`
+		ID        uint        `json:"id"`
+		DeviceID  uint        `json:"device_id"`
+		ImageID   uint        `json:"image_id"`
+		Position  int         `json:"position"`
+		Source    string      `json:"source"`
 		CreatedAt interface{} `json:"created_at"`
 		Image     *struct {
-			ID            uint   `json:"id"`
-			Caption       string `json:"caption"`
-			Orientation   string `json:"orientation"`
-			ThumbnailURL  string `json:"thumbnail_url"`
+			ID           uint   `json:"id"`
+			Caption      string `json:"caption"`
+			Orientation  string `json:"orientation"`
+			ThumbnailURL string `json:"thumbnail_url"`
 		} `json:"image,omitempty"`
 	}
 
@@ -91,8 +91,8 @@ func (h *QueueHandler) ListQueue(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"items":     respItems,
-		"count":     count,
+		"items":      respItems,
+		"count":      count,
 		"soft_limit": 500,
 	})
 }
@@ -227,9 +227,9 @@ func (h *QueueHandler) QueueStatus(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"count":          count,
-		"soft_limit":     500,
-		"next_image_id":  nextImageID,
+		"count":         count,
+		"soft_limit":    500,
+		"next_image_id": nextImageID,
 	})
 }
 

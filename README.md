@@ -249,6 +249,33 @@ This script:
 - Modifies config for development (port 9608, dev slug)
 - Triggers Supervisor to rebuild and restart the add-on
 
+### Updating the Private Fork
+
+`origin` is the private fork and `upstream` is the canonical
+`aitjcize/esp32-photoframe-server` repository. Integrate named upstream releases
+on a temporary branch, verify them, then merge the result into private `main`:
+
+```bash
+git fetch upstream --tags
+git switch -c integrate/upstream-vX.Y.Z main
+git merge vX.Y.Z
+```
+
+Before resolving the merge, compare `backend/db/migrations/` for duplicate
+migration numbers. Keep upstream migration numbers unchanged and renumber private
+migration up/down pairs after the upstream sequence when necessary.
+
+Build and smoke-test the result with fresh data before merging it into `main`:
+
+```bash
+mv data data.backup-$(date +%Y%m%d-%H%M%S)  # when data exists
+docker compose build --no-cache
+docker compose up -d
+docker compose logs
+curl --fail http://localhost:9607/api/status
+docker compose down
+```
+
 ## Support
 
 If you find this project useful, consider buying me a coffee! ☕
