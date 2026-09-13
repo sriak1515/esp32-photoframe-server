@@ -65,8 +65,11 @@ func (l *QueueImageLoader) Load(item *model.DeviceQueueItem) (image.Image, error
 }
 
 func (l *QueueImageLoader) loadImmich(img *model.Image) (image.Image, error) {
+	if _, err := l.immichService.DatePolicy(); err != nil {
+		return nil, err
+	}
 	// Try cache first
-	if l.immichCache != nil && l.immichCache.Enabled() {
+	if l.immichCache != nil {
 		if cached := l.immichCache.Lookup(img.ID); cached != "" {
 			if cachedImg, err := loadLocalImage(cached); err == nil {
 				return cachedImg, nil

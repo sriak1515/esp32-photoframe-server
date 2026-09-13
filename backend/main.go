@@ -246,6 +246,7 @@ func main() {
 	pexelsTopics := handler.NewTopicSourceHandler(pexelsService)
 	gh := handler.NewGalleryHandler(database, synologyService, immichService, dataDir)
 	queueService := service.NewQueueService(database)
+	queueService.SetImmichService(immichService, immichCacheService)
 	queueImageLoader := service.NewQueueImageLoader(database, dataDir, immichService, immichCacheService, synologyService)
 	ih := handler.NewImageHandler(handler.ImageHandlerDeps{
 		Settings:       settingsService,

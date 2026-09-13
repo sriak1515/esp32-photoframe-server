@@ -262,9 +262,12 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 			img, loadErr := h.queueLoader.Load(queueItem)
 			if loadErr != nil {
 				deferredDeliveryAllowed = false
-				// Image may have been deleted; remove from queue and fall through to source
+				var configErr *service.ImmichDatePolicyError
+				if errors.As(loadErr, &configErr) {
+					return respondError(c, http.StatusBadRequest, loadErr.Error())
+				}
+				// Preserve the entry: cache/network/decoding failures can be transient.
 				log.Printf("Queue image load failed for device %d, image %d: %v", device.ID, queueItem.ImageID, loadErr)
-				h.queueService.RemoveByImageID(device.ID, queueItem.ImageID)
 			} else {
 				// Get photo taken at
 				var photoTakenAt *time.Time
@@ -272,36 +275,17 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 					photoTakenAt = queueItem.Image.PhotoTakenAt
 				}
 
-				// Remove from queue (consumed)
-				go h.queueService.Remove(device.ID, queueItem.ID)
-
-				// Record history
-				if len([]uint{queueItem.ImageID}) > 0 {
-					go func(devID uint, imgIDs []uint) {
-						rows := make([]model.DeviceHistory, 0, len(imgIDs))
-						now := time.Now()
-						for _, imgID := range imgIDs {
-							if imgID == 0 {
-								continue
-							}
-							rows = append(rows, model.DeviceHistory{
-								DeviceID: devID,
-								ImageID:  imgID,
-								ServedAt: now,
-							})
-						}
-						if len(rows) == 0 {
-							return
-						}
-						h.db.Create(&rows)
-					}(device.ID, []uint{queueItem.ImageID})
-				}
-
-				// Build response from queue item
-				return h.serveProcessedImage(c, device, deviceFound, img, photoTakenAt,
+				// Build and deliver the response before consuming the queue reference.
+				if err := h.serveProcessedImage(c, device, deviceFound, img, photoTakenAt,
 					logicalW, logicalH, nativeW, nativeH, orientation, layout, displayMode,
 					showDate, showPhotoDate, showWeather, lat, lon, showCalendar,
-					device.DateFormat, firmwareVersion)
+					device.DateFormat, firmwareVersion); err != nil {
+					return err
+				}
+				// Record history while the image FK is still live. History is ancillary:
+				// a successful delivery still consumes the queue item if this write fails.
+				h.completeQueuedDelivery(device.ID, queueItem.ID, queueItem.ImageID)
+				return nil
 			}
 		}
 	}
@@ -569,6 +553,15 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 	err = c.Blob(http.StatusOK, contentType, processedBytes)
 	h.completeConfigDelivery(delivery, err)
 	return err
+}
+
+func (h *ImageHandler) completeQueuedDelivery(deviceID, itemID, imageID uint) {
+	if err := h.db.Create(&model.DeviceHistory{DeviceID: deviceID, ImageID: imageID, ServedAt: time.Now()}).Error; err != nil {
+		log.Printf("Queue history write failed for device %d, image %d: %v", deviceID, imageID, err)
+	}
+	if err := h.queueService.Remove(deviceID, itemID); err != nil {
+		log.Printf("Queue consumption cleanup failed for device %d, image %d: %v", deviceID, imageID, err)
+	}
 }
 
 // SyncDeviceConfig handles device config sync.

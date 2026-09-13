@@ -69,3 +69,23 @@ func PickRandomDBPhotoForAlbumsFiltered(
 	err := query.First(&item).Error
 	return item, err
 }
+
+func pickRandomDBPhotoForAlbumsWithPolicy(db *gorm.DB, source, orientationFilter string, albumIDs, excludeIDs []uint, policy ImmichDatePolicy, cachedOnly bool) (model.Image, error) {
+	if len(albumIDs) == 0 {
+		return pickRandomDBPhotoWithPolicy(db, source, orientationFilter, excludeIDs, policy, cachedOnly)
+	}
+	query := db.Model(&model.Image{}).Joins("JOIN image_album_memberships m ON m.image_id = images.id").Where("images.source = ?", source).Where("m.album_id IN ?", albumIDs).Order("RANDOM()")
+	if len(excludeIDs) > 0 {
+		query = query.Where("images.id NOT IN ?", excludeIDs)
+	}
+	if orientationFilter != "" {
+		query = query.Where("images.orientation IN ?", []string{orientationFilter, "auto"})
+	}
+	query = policy.Apply(query, "images.photo_taken_date")
+	if cachedOnly {
+		query = query.Joins("JOIN immich_caches c ON c.image_id = images.id")
+	}
+	var item model.Image
+	err := query.First(&item).Error
+	return item, err
+}

@@ -18,13 +18,14 @@ type RemoteAsset struct {
 	// FilePath is how this source's downloader later fetches the bytes: a local
 	// path for disk sources (immich/synology fetch by id instead), or the image
 	// URL for URL-based sources (unsplash/pexels).
-	FilePath     string
-	Caption      string // optional (e.g. photographer credit)
-	Width        int
-	Height       int
-	Orientation  string // "landscape"|"portrait"|"auto"; if "" the engine derives it from w/h
-	ThumbnailKey string // optional (synology cache key)
-	PhotoTakenAt *time.Time
+	FilePath       string
+	Caption        string // optional (e.g. photographer credit)
+	Width          int
+	Height         int
+	Orientation    string // "landscape"|"portrait"|"auto"; if "" the engine derives it from w/h
+	ThumbnailKey   string // optional (synology cache key)
+	PhotoTakenAt   *time.Time
+	PhotoTakenDate *string
 }
 
 // RemoteAlbum is a source album (or, for search-topic sources, a topic) to sync.
@@ -125,6 +126,7 @@ func upsertAlbumAssets(db *gorm.DB, source string, albumID uint, assets []Remote
 	err = db.Transaction(func(tx *gorm.DB) error {
 		// Batch-load existing image ids by external id (one query).
 		idByExt := make(map[string]uint, len(assets))
+		existingByExt := make(map[string]model.Image, len(assets))
 		if len(assets) > 0 {
 			extIDs := make([]string, 0, len(assets))
 			for _, a := range assets {
@@ -137,6 +139,7 @@ func upsertAlbumAssets(db *gorm.DB, source string, albumID uint, assets []Remote
 			}
 			for _, im := range existing {
 				idByExt[im.ExternalID] = im.ID
+				existingByExt[im.ExternalID] = im
 			}
 		}
 
@@ -145,7 +148,19 @@ func upsertAlbumAssets(db *gorm.DB, source string, albumID uint, assets []Remote
 			if a.ExternalID == "" {
 				continue
 			}
-			if _, ok := idByExt[a.ExternalID]; ok {
+			if existing, ok := existingByExt[a.ExternalID]; ok {
+				updates := map[string]interface{}{}
+				if a.PhotoTakenAt != nil {
+					updates["photo_taken_at"] = a.PhotoTakenAt
+				}
+				if a.PhotoTakenDate != nil {
+					updates["photo_taken_date"] = a.PhotoTakenDate
+				}
+				if len(updates) > 0 {
+					if e := tx.Model(&model.Image{}).Where("id = ?", existing.ID).Updates(updates).Error; e != nil {
+						return e
+					}
+				}
 				continue
 			}
 			orientation := a.Orientation
@@ -153,17 +168,18 @@ func upsertAlbumAssets(db *gorm.DB, source string, albumID uint, assets []Remote
 				orientation = determineOrientation(a.Width, a.Height, "")
 			}
 			img := model.Image{
-				Source:       source,
-				ExternalID:   a.ExternalID,
-				FilePath:     a.FilePath,
-				Caption:      a.Caption,
-				Width:        a.Width,
-				Height:       a.Height,
-				Orientation:  orientation,
-				ThumbnailKey: a.ThumbnailKey,
-				PhotoTakenAt: a.PhotoTakenAt,
-				CreatedAt:    time.Now(),
-				Status:       "pending",
+				Source:         source,
+				ExternalID:     a.ExternalID,
+				FilePath:       a.FilePath,
+				Caption:        a.Caption,
+				Width:          a.Width,
+				Height:         a.Height,
+				Orientation:    orientation,
+				ThumbnailKey:   a.ThumbnailKey,
+				PhotoTakenAt:   a.PhotoTakenAt,
+				PhotoTakenDate: a.PhotoTakenDate,
+				CreatedAt:      time.Now(),
+				Status:         "pending",
 			}
 			if e := tx.Create(&img).Error; e != nil {
 				return e

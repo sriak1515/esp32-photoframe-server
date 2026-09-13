@@ -40,11 +40,12 @@ type Image struct {
 	// photo id as text, unsplash/pexels id). Indexed with Source for dedup; the
 	// generic replacement for the old per-source id columns (immich_asset_id,
 	// synology_photo_id).
-	ExternalID   string         `gorm:"index:idx_images_source_external,priority:2" json:"external_id"`
-	ThumbnailKey string         `json:"thumbnail_key"`  // Cache key for Synology
-	PhotoTakenAt *time.Time     `json:"photo_taken_at"` // Original photo creation/taken date
-	CreatedAt    time.Time      `json:"created_at"`
-	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
+	ExternalID     string         `gorm:"index:idx_images_source_external,priority:2" json:"external_id"`
+	ThumbnailKey   string         `json:"thumbnail_key"`  // Cache key for Synology
+	PhotoTakenAt   *time.Time     `json:"photo_taken_at"` // Original photo creation/taken date
+	PhotoTakenDate *string        `gorm:"index:idx_images_photo_taken_date" json:"photo_taken_date"`
+	CreatedAt      time.Time      `json:"created_at"`
+	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 type GoogleAuth struct {

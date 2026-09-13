@@ -87,19 +87,36 @@ func PickRandomDBPhoto(db *gorm.DB, source, orientationFilter string, excludeIDs
 // returned — useful when the Immich server is offline and only cached images
 // can be served.
 func PickRandomDBPhotoFiltered(db *gorm.DB, source, orientationFilter string, excludeIDs []uint, dateFrom, dateTo time.Time, cachedOnly bool) (model.Image, error) {
-	query := db.Order("RANDOM()").Where("source = ?", source)
+	query := db.Model(&model.Image{}).Order("RANDOM()").Where("images.source = ?", source)
 	if len(excludeIDs) > 0 {
-		query = query.Where("id NOT IN ?", excludeIDs)
+		query = query.Where("images.id NOT IN ?", excludeIDs)
 	}
 	if orientationFilter != "" {
-		query = query.Where("orientation IN ?", []string{orientationFilter, "auto"})
+		query = query.Where("images.orientation IN ?", []string{orientationFilter, "auto"})
 	}
 	if !dateFrom.IsZero() {
-		query = query.Where("photo_taken_at >= ?", dateFrom)
+		query = query.Where("images.photo_taken_at >= ?", dateFrom)
 	}
 	if !dateTo.IsZero() {
-		query = query.Where("photo_taken_at <= ?", dateTo)
+		query = query.Where("images.photo_taken_at <= ?", dateTo)
 	}
+	if cachedOnly {
+		query = query.Joins("JOIN immich_caches c ON c.image_id = images.id")
+	}
+	var item model.Image
+	err := query.First(&item).Error
+	return item, err
+}
+
+func pickRandomDBPhotoWithPolicy(db *gorm.DB, source, orientationFilter string, excludeIDs []uint, policy ImmichDatePolicy, cachedOnly bool) (model.Image, error) {
+	query := db.Model(&model.Image{}).Order("RANDOM()").Where("images.source = ?", source)
+	if len(excludeIDs) > 0 {
+		query = query.Where("images.id NOT IN ?", excludeIDs)
+	}
+	if orientationFilter != "" {
+		query = query.Where("images.orientation IN ?", []string{orientationFilter, "auto"})
+	}
+	query = policy.Apply(query, "images.photo_taken_date")
 	if cachedOnly {
 		query = query.Joins("JOIN immich_caches c ON c.image_id = images.id")
 	}

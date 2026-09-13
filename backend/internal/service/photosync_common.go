@@ -43,11 +43,64 @@ func clearSourcePhotos(db *gorm.DB, source string) error {
 // member of any album (their album was disabled or they were removed upstream),
 // then sweeps cached thumbnail files the deleted rows leave behind.
 func gcOrphanImagesForSource(db *gorm.DB, source string) {
+	if source == model.SourceImmich {
+		immichCacheFilesMu.Lock()
+		defer immichCacheFilesMu.Unlock()
+	}
 	sub := db.Model(&model.ImageAlbumMembership{}).Select("image_id")
-	if err := db.Unscoped().
-		Where("source = ? AND id NOT IN (?)", source, sub).
-		Delete(&model.Image{}).Error; err != nil {
+	query := db.Unscoped().Where("source = ? AND id NOT IN (?)", source, sub)
+	if source == model.SourceImmich && db.Migrator().HasTable(&model.DeviceQueueItem{}) {
+		queueSub := db.Model(&model.DeviceQueueItem{}).Select("image_id")
+		query = query.Where("id NOT IN (?)", queueSub)
+	}
+	if source != model.SourceImmich {
+		if err := query.Delete(&model.Image{}).Error; err != nil {
+			log.Printf("[%s] gc orphan images: %v", source, err)
+		}
+		gcOrphanThumbnails(db)
+		return
+	}
+	var staged []stagedCacheFile
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var images []model.Image
+		txQuery := tx.Unscoped().Where("source = ? AND id NOT IN (?)", source, tx.Model(&model.ImageAlbumMembership{}).Select("image_id"))
+		if tx.Migrator().HasTable(&model.DeviceQueueItem{}) {
+			txQuery = txQuery.Where("id NOT IN (?)", tx.Model(&model.DeviceQueueItem{}).Select("image_id"))
+		}
+		if err := txQuery.Find(&images).Error; err != nil {
+			return err
+		}
+		ids := make([]uint, 0, len(images))
+		for _, image := range images {
+			ids = append(ids, image.ID)
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+		var caches []model.ImmichCache
+		if err := tx.Where("image_id IN ?", ids).Find(&caches).Error; err != nil {
+			return err
+		}
+		paths := make([]string, 0, len(caches))
+		for _, cache := range caches {
+			paths = append(paths, cache.FilePath)
+		}
+		files, err := stageCacheFiles(paths)
+		if err != nil {
+			return err
+		}
+		staged = files
+		return tx.Unscoped().Where("id IN ?", ids).Delete(&model.Image{}).Error
+	})
+	if err != nil {
+		if restoreErr := restoreCacheFiles(staged); restoreErr != nil {
+			log.Printf("[%s] restore staged cache files: %v", source, restoreErr)
+		}
 		log.Printf("[%s] gc orphan images: %v", source, err)
+	} else {
+		if err := removeStagedCacheFiles(staged); err != nil {
+			log.Printf("[%s] remove staged cache files: %v", source, err)
+		}
 	}
 	gcOrphanThumbnails(db)
 }

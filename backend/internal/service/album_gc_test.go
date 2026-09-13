@@ -99,6 +99,10 @@ func TestSyncAlbumSourceReportsAlbumFailures(t *testing.T) {
 	db := setupAlbumDB(t)
 	mkAlbum(t, db, "good")
 	mkAlbum(t, db, "bad")
+	badAlbum := model.Album{}
+	require.NoError(t, db.Where("external_id = ?", "bad").First(&badAlbum).Error)
+	stale := mkImage(t, db, "bad-stale")
+	mkMembership(t, db, stale, badAlbum)
 
 	src := &fakeAlbumSource{
 		assets: map[string][]RemoteAsset{
@@ -111,6 +115,32 @@ func TestSyncAlbumSourceReportsAlbumFailures(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "1 of 2 album(s) failed")
 	assert.Contains(t, err.Error(), "status 400")
+	assert.True(t, imageExists(db, stale.ID), "failed album state must be preserved")
+}
+
+func TestImmichOrphanGCDeletesPhysicalCacheFile(t *testing.T) {
+	db := setupAlbumDB(t)
+	image := mkImage(t, db, "orphan")
+	path := filepath.Join(t.TempDir(), "cached.jpg")
+	require.NoError(t, os.WriteFile(path, []byte("cache"), 0o644))
+	require.NoError(t, db.Create(&model.ImmichCache{ImageID: image.ID, AssetID: "orphan", FilePath: path}).Error)
+	gcOrphanImagesForSource(db, model.SourceImmich)
+	assert.False(t, imageExists(db, image.ID))
+	assert.NoFileExists(t, path)
+}
+
+func TestNonImmichOrphanGCDoesNotTouchImmichCacheFiles(t *testing.T) {
+	db := setupAlbumDB(t)
+	immich := mkImage(t, db, "kept")
+	path := filepath.Join(t.TempDir(), "cached.jpg")
+	require.NoError(t, os.WriteFile(path, []byte("cache"), 0o644))
+	require.NoError(t, db.Create(&model.ImmichCache{ImageID: immich.ID, AssetID: "kept", FilePath: path}).Error)
+	nonImmich := model.Image{Source: model.SourceSynologyPhotos, ExternalID: "gone"}
+	require.NoError(t, db.Create(&nonImmich).Error)
+	gcOrphanImagesForSource(db, model.SourceSynologyPhotos)
+	assert.False(t, imageExists(db, nonImmich.ID))
+	assert.True(t, imageExists(db, immich.ID))
+	assert.FileExists(t, path)
 }
 
 // Unchecking every album and resyncing must remove all of the source's images.

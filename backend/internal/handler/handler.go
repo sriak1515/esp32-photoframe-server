@@ -59,8 +59,28 @@ func (h *Handler) UpdateSettings(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return respondError(c, http.StatusBadRequest, "Invalid request")
 	}
+	from, hasFrom := req.Settings["immich_date_from"]
+	to, hasTo := req.Settings["immich_date_to"]
+	if hasFrom || hasTo {
+		var fromValue, toValue *string
+		if hasFrom {
+			fromValue = &from
+		}
+		if hasTo {
+			toValue = &to
+		}
+		if err := h.settings.UpdateImmichDatePair(fromValue, toValue); err != nil {
+			if _, ok := err.(*service.ImmichDatePolicyError); ok {
+				return respondError(c, http.StatusBadRequest, err.Error())
+			}
+			return respondError(c, http.StatusInternalServerError, err.Error())
+		}
+	}
 
 	for k, v := range req.Settings {
+		if k == "immich_date_from" || k == "immich_date_to" {
+			continue
+		}
 		if err := h.settings.Set(k, v); err != nil {
 			return respondError(c, http.StatusInternalServerError, err.Error())
 		}
