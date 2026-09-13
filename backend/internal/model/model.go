@@ -104,7 +104,16 @@ type Device struct {
 	DeviceProcessingSettings string    `json:"device_processing_settings" gorm:"default:'{}'"`
 	DeviceColorPalette       string    `json:"device_color_palette" gorm:"default:'{}'"`
 	ConfigLastUpdated        int64     `json:"config_last_updated" gorm:"default:0"`
+	ServerAuthoritative      bool      `json:"server_authoritative" gorm:"default:true"`
+	ConfigSyncPending        bool      `json:"config_sync_pending" gorm:"default:true"`
 	CreatedAt                time.Time `json:"created_at"`
+}
+
+// NewDevice applies defaults needed before database insertion, including in tests.
+func NewDevice(device Device) *Device {
+	device.ServerAuthoritative = true
+	device.ConfigSyncPending = true
+	return &device
 }
 
 // IsGrayscale reports whether this device drives a grayscale (GC16) panel.

@@ -196,12 +196,14 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 	}
 	// Determine effective orientation from header or device config
 	orientation := ""
-	if oStr := c.Request().Header.Get("X-Display-Orientation"); oStr != "" {
+	if deviceFound && device.ServerAuthoritative {
+		orientation = device.Orientation
+	} else if oStr := c.Request().Header.Get("X-Display-Orientation"); oStr != "" {
 		orientation = oStr
 		// Persist orientation update to database if it changed
 		if deviceFound && device.Orientation != oStr {
 			device.Orientation = oStr
-			h.db.Model(&device).Update("orientation", oStr)
+			h.db.Model(&device).Where("server_authoritative = ?", false).Update("orientation", oStr)
 		}
 	} else if deviceFound {
 		orientation = device.Orientation
@@ -248,15 +250,18 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 		backgroundColor = settings.BackgroundColor
 	}
 
+	deferredDeliveryAllowed := true
 	// 1.2. Check queue first — serve queued images before falling back to source
 	if deviceFound && h.queueService != nil && h.queueLoader != nil {
 		queueItem, err := h.queueService.GetNextForDevice(device.ID)
 		if err != nil {
+			deferredDeliveryAllowed = false
 			log.Printf("Queue check failed for device %d: %v", device.ID, err)
 		} else if queueItem != nil {
 			// Load image from queue
 			img, loadErr := h.queueLoader.Load(queueItem)
 			if loadErr != nil {
+				deferredDeliveryAllowed = false
 				// Image may have been deleted; remove from queue and fall through to source
 				log.Printf("Queue image load failed for device %d, image %d: %v", device.ID, queueItem.ImageID, loadErr)
 				h.queueService.RemoveByImageID(device.ID, queueItem.ImageID)
@@ -371,10 +376,12 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 		}
 		body := buf.Bytes()
 
-		h.applyConfigSync(c, &device, deviceFound)
+		delivery := h.applyConfigSync(c, &device, deviceFound, deferredDeliveryAllowed)
 
 		c.Response().Header().Set("Content-Length", fmt.Sprintf("%d", len(body)))
-		return c.Blob(http.StatusOK, "image/png", body)
+		err := c.Blob(http.StatusOK, "image/png", body)
+		h.completeConfigDelivery(delivery, err)
+		return err
 	}
 
 	// 1.6. Record History
@@ -550,7 +557,7 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 	}
 
 	// 5. Config Sync: push config payload if server has newer config
-	h.applyConfigSync(c, &device, deviceFound)
+	delivery := h.applyConfigSync(c, &device, deviceFound, deferredDeliveryAllowed)
 
 	// Set Content-Length header
 	c.Response().Header().Set("Content-Length", fmt.Sprintf("%d", len(processedBytes)))
@@ -559,7 +566,9 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 	if firmwareVersion == "" || !photoframe.SupportsEPDGZ(firmwareVersion) {
 		contentType = "image/png"
 	}
-	return c.Blob(http.StatusOK, contentType, processedBytes)
+	err = c.Blob(http.StatusOK, contentType, processedBytes)
+	h.completeConfigDelivery(delivery, err)
+	return err
 }
 
 // SyncDeviceConfig handles device config sync.
@@ -583,9 +592,13 @@ func (h *ImageHandler) SyncDeviceConfig(c echo.Context) error {
 		return respondError(c, http.StatusBadRequest, "invalid request")
 	}
 
-	// Only accept the device's config and color palette when the device is
-	// newer than the server. Processing settings are never accepted — the
-	// server is the sole authority and pushes them via X-Config-Payload.
+	if device.ServerAuthoritative {
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"status": "server_authoritative", "config_last_updated": device.ConfigLastUpdated,
+		})
+	}
+
+	// Legacy reconciliation accepts firmware-managed fields when the device is newer.
 	updates := map[string]interface{}{}
 	if req.ConfigLastUpdated > device.ConfigLastUpdated {
 		if len(req.Config) > 0 {
@@ -594,11 +607,24 @@ func (h *ImageHandler) SyncDeviceConfig(c echo.Context) error {
 		if len(req.ColorPalette) > 0 {
 			updates["device_color_palette"] = string(req.ColorPalette)
 		}
+		if len(req.ProcessingSettings) > 0 {
+			serialized, err := service.MergeFirmwareProcessing(device.DeviceProcessingSettings, string(req.ProcessingSettings))
+			if err != nil {
+				return respondError(c, http.StatusBadRequest, "invalid processing settings")
+			}
+			updates["device_processing_settings"] = string(serialized)
+		}
 		updates["config_last_updated"] = req.ConfigLastUpdated
 	}
 
 	if len(updates) > 0 {
-		h.db.Model(&device).Updates(updates)
+		result := h.db.Model(&device).Where("server_authoritative = ?", false).Updates(updates)
+		if result.Error != nil {
+			return respondError(c, http.StatusInternalServerError, result.Error.Error())
+		}
+		if result.RowsAffected != 1 {
+			return respondError(c, http.StatusConflict, "device became server-managed during sync")
+		}
 	}
 
 	// Return server's config if it's newer
@@ -621,35 +647,82 @@ func (h *ImageHandler) UpdateDeviceConfig(c echo.Context) error {
 	}
 
 	var req struct {
-		Config             json.RawMessage `json:"config"`
-		ProcessingSettings json.RawMessage `json:"processing_settings"`
-		ColorPalette       json.RawMessage `json:"color_palette"`
+		Config             json.RawMessage        `json:"config"`
+		ProcessingSettings json.RawMessage        `json:"processing_settings"`
+		ColorPalette       json.RawMessage        `json:"color_palette"`
+		Device             map[string]interface{} `json:"device"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return respondError(c, http.StatusBadRequest, "invalid request")
 	}
 
-	updates := map[string]interface{}{
-		"config_last_updated": time.Now().Unix(),
-	}
+	configRaw := json.RawMessage(device.DeviceConfig)
+	processingRaw := json.RawMessage(device.DeviceProcessingSettings)
+	paletteRaw := json.RawMessage(device.DeviceColorPalette)
+	configProvided := len(req.Config) > 0
+	processingProvided := len(req.ProcessingSettings) > 0
+	paletteProvided := len(req.ColorPalette) > 0
 	if len(req.Config) > 0 {
-		updates["device_config"] = string(req.Config)
+		configRaw = req.Config
 	}
 	if len(req.ProcessingSettings) > 0 {
-		updates["device_processing_settings"] = string(req.ProcessingSettings)
+		processingRaw = req.ProcessingSettings
 	}
 	if len(req.ColorPalette) > 0 {
-		updates["device_color_palette"] = string(req.ColorPalette)
+		paletteRaw = req.ColorPalette
 	}
-
-	h.db.Model(&device).Updates(updates)
-
-	// If image_url points to this server, ensure a device token is included
+	for _, raw := range []json.RawMessage{configRaw, processingRaw, paletteRaw} {
+		if len(raw) == 0 || !json.Valid(raw) {
+			return respondError(c, http.StatusBadRequest, "config, processing settings, and palette must be valid JSON")
+		}
+	}
 	var configMap map[string]interface{}
-	if len(req.Config) > 0 {
-		json.Unmarshal(req.Config, &configMap)
+	if err := json.Unmarshal(configRaw, &configMap); err != nil || configMap == nil {
+		return respondError(c, http.StatusBadRequest, "config must be a JSON object")
 	}
-	if configMap != nil {
+	for name, raw := range map[string]json.RawMessage{"processing settings": processingRaw, "palette": paletteRaw} {
+		var object map[string]interface{}
+		if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+			return respondError(c, http.StatusBadRequest, name+" must be a JSON object")
+		}
+	}
+	generation := int64(0)
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		var current model.Device
+		if err := tx.First(&current, device.ID).Error; err != nil {
+			return err
+		}
+		if !configProvided {
+			configRaw = json.RawMessage(current.DeviceConfig)
+		}
+		if !processingProvided {
+			processingRaw = json.RawMessage(current.DeviceProcessingSettings)
+		}
+		if !paletteProvided {
+			paletteRaw = json.RawMessage(current.DeviceColorPalette)
+		}
+		if err := json.Unmarshal(configRaw, &configMap); err != nil || configMap == nil {
+			return errors.New("config must be a JSON object")
+		}
+		for _, raw := range []json.RawMessage{processingRaw, paletteRaw} {
+			var object map[string]interface{}
+			if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+				return errors.New("settings documents must be JSON objects")
+			}
+		}
+		generation = service.NextConfigGeneration(current.ConfigLastUpdated)
+		rowUpdates := map[string]interface{}{}
+		for _, key := range []string{"name", "host", "orientation", "enable_collage", "show_date", "show_photo_date", "show_weather", "weather_lat", "weather_lon", "ai_provider", "ai_model", "ai_prompt", "layout", "display_mode", "show_calendar", "calendar_id", "date_format", "source", "background_color", "server_authoritative"} {
+			if value, exists := req.Device[key]; exists {
+				rowUpdates[key] = value
+			}
+		}
+		if authoritative, ok := rowUpdates["server_authoritative"].(bool); ok {
+			current.ServerAuthoritative = authoritative
+		}
+		if name, ok := rowUpdates["name"].(string); ok {
+			current.Name = name
+		}
 		// Matches the unified bare "/image", the legacy "/image/<source>",
 		// and any "/image?..." query form.
 		if imageURL, ok := configMap["image_url"].(string); ok &&
@@ -659,16 +732,35 @@ func (h *ImageHandler) UpdateDeviceConfig(c echo.Context) error {
 			// Generate or reuse a device token
 			if userID, ok := c.Get("user_id").(uint); ok {
 				username, _ := c.Get("username").(string)
-				token, err := h.auth.GetOrGenerateDeviceToken(userID, username, device.Name, &device.ID)
-				if err == nil {
-					configMap["access_token"] = token
-					// Re-serialize with token for DB storage
-					updated, _ := json.Marshal(configMap)
-					updates["device_config"] = string(updated)
-					h.db.Model(&device).Update("device_config", string(updated))
+				token, err := h.auth.GetOrGenerateDeviceTokenWithDB(tx, userID, username, current.Name, &current.ID)
+				if err != nil {
+					return err
 				}
+				configMap["access_token"] = token
 			}
 		}
+		serializedConfig, err := json.Marshal(configMap)
+		if err != nil {
+			return err
+		}
+		rowUpdates["device_config"] = string(serializedConfig)
+		rowUpdates["device_processing_settings"] = string(processingRaw)
+		rowUpdates["device_color_palette"] = string(paletteRaw)
+		rowUpdates["config_last_updated"] = generation
+		rowUpdates["config_sync_pending"] = current.ServerAuthoritative
+		result := tx.Model(&model.Device{}).Where("id = ?", current.ID).Updates(rowUpdates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		if err := tx.First(&device, current.ID).Error; err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return respondError(c, http.StatusInternalServerError, err.Error())
 	}
 
 	// Attempt to push directly to the device. Processing settings go FIRST:
@@ -678,28 +770,53 @@ func (h *ImageHandler) UpdateDeviceConfig(c echo.Context) error {
 	// would skip the payload). When the processing push fails, the config
 	// push is skipped too so the whole edit stays eligible for the deferred
 	// sync path.
-	pushResult := "synced"
+	pushResult := "pushed"
+	if !device.ServerAuthoritative {
+		pushResult = "legacy"
+	}
+	if device.ServerAuthoritative && device.Host == "" {
+		pushResult = "pending"
+	}
 	if device.Host != "" && configMap != nil {
 		client := photoframe.NewClient(device.Host)
 		pushOK := true
-		if len(req.ProcessingSettings) > 0 {
-			if err := client.PushProcessingSettings(req.ProcessingSettings); err != nil {
+		if device.ServerAuthoritative || len(req.ProcessingSettings) > 0 {
+			if err := client.PushProcessingSettings(processingRaw); err != nil {
 				log.Printf("Could not push processing settings to device %s: %v (will sync on next image fetch)", device.Host, err)
 				pushOK = false
 			}
 		}
-		if !pushOK {
-			pushResult = "offline"
-		} else if err := client.PushConfig(configMap); err != nil {
+		if device.ServerAuthoritative {
+			if err := client.PushPalette(paletteRaw); err != nil {
+				log.Printf("Could not push palette to device %s: %v (will retry on next image fetch)", device.Host, err)
+				pushOK = false
+			}
+		}
+		if err := client.PushConfig(configMap); err != nil {
 			log.Printf("Could not push config to device %s: %v (will sync on next image fetch)", device.Host, err)
-			pushResult = "offline"
+			pushOK = false
+		}
+		if !pushOK {
+			if device.ServerAuthoritative {
+				pushResult = "pending"
+			}
+		}
+		if device.ServerAuthoritative && pushOK {
+			cleared, err := service.ClearConfigPending(h.db, device.ID, generation)
+			if err != nil || !cleared {
+				pushResult = "pending"
+				if err == nil {
+					_ = service.RetainCurrentConfigPending(h.db, device.ID, generation)
+				}
+			}
 		}
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"status":              "updated",
 		"push_result":         pushResult,
-		"config_last_updated": updates["config_last_updated"],
+		"config_last_updated": generation,
+		"config_sync_pending": device.ServerAuthoritative && pushResult == "pending",
 	})
 }
 
@@ -714,7 +831,9 @@ func (h *ImageHandler) GetDeviceConfig(c echo.Context) error {
 	}
 
 	resp := map[string]interface{}{
-		"config_last_updated": device.ConfigLastUpdated,
+		"config_last_updated":  device.ConfigLastUpdated,
+		"server_authoritative": device.ServerAuthoritative,
+		"config_sync_pending":  device.ConfigSyncPending,
 	}
 
 	if device.DeviceConfig != "" && device.DeviceConfig != "{}" {
@@ -749,6 +868,27 @@ func buildConfigPayload(device *model.Device) string {
 		return ""
 	}
 
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func buildCompleteConfigPayload(device *model.Device) string {
+	payload := map[string]json.RawMessage{
+		"config":              json.RawMessage(device.DeviceConfig),
+		"processing_settings": json.RawMessage(device.DeviceProcessingSettings),
+		"color_palette":       json.RawMessage(device.DeviceColorPalette),
+	}
+	for key, raw := range payload {
+		if len(raw) == 0 {
+			payload[key] = json.RawMessage(`{}`)
+		}
+		if !json.Valid(payload[key]) {
+			return ""
+		}
+	}
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return ""
@@ -795,9 +935,26 @@ const postRotateWaitSec = 20
 //     its config in the background, catching the server up to on-device edits
 //
 // Shared by the bypass branch and the main flow.
-func (h *ImageHandler) applyConfigSync(c echo.Context, device *model.Device, deviceFound bool) {
-	if !deviceFound {
+type configDelivery struct {
+	deviceID   uint
+	generation int64
+}
+
+func (h *ImageHandler) completeConfigDelivery(delivery *configDelivery, responseErr error) {
+	if delivery == nil || responseErr != nil {
 		return
+	}
+	cleared, err := service.ClearConfigPending(h.db, delivery.deviceID, delivery.generation)
+	if err != nil {
+		log.Printf("Config sync: failed to clear pending for device %d: %v", delivery.deviceID, err)
+	} else if !cleared {
+		_ = service.RetainCurrentConfigPending(h.db, delivery.deviceID, delivery.generation)
+	}
+}
+
+func (h *ImageHandler) applyConfigSync(c echo.Context, device *model.Device, deviceFound bool, allowCompletion bool) *configDelivery {
+	if !deviceFound {
+		return nil
 	}
 
 	deviceConfigTS := int64(0)
@@ -806,29 +963,44 @@ func (h *ImageHandler) applyConfigSync(c echo.Context, device *model.Device, dev
 			deviceConfigTS = ts
 		}
 	}
+	if device.ServerAuthoritative {
+		if !device.ConfigSyncPending {
+			return nil
+		}
+		payload := buildCompleteConfigPayload(device)
+		if payload == "" {
+			return nil
+		}
+		c.Response().Header().Set("X-Config-Payload", payload)
+		if !allowCompletion {
+			return nil
+		}
+		return &configDelivery{deviceID: device.ID, generation: device.ConfigLastUpdated}
+	}
 
 	// Device has edits we haven't captured: ask it to stay up and pull them.
 	if deviceConfigTS > device.ConfigLastUpdated {
 		if device.Host == "" {
-			return // remote device we can't reach back to
+			return nil // remote device we can't reach back to
 		}
 		c.Response().Header().Set("X-Post-Rotate-Wait-Sec", strconv.Itoa(postRotateWaitSec))
 		h.pullDeviceConfigAsync(*device, deviceConfigTS)
-		return
+		return nil
 	}
 
 	// Server has newer config: push it down. (Nothing to push if we've never
 	// recorded a server-side edit, or the device is already current.)
 	if device.ConfigLastUpdated <= 0 || device.ConfigLastUpdated <= deviceConfigTS {
-		return
+		return nil
 	}
 	payload := buildConfigPayload(device)
 	if payload == "" {
-		return
+		return nil
 	}
 	c.Response().Header().Set("X-Config-Payload", payload)
 	log.Printf("Config sync: pushing config to device (server=%d, device=%d)",
 		device.ConfigLastUpdated, deviceConfigTS)
+	return nil
 }
 
 // pullDeviceConfigAsync fetches the device's current config in the background and
@@ -858,7 +1030,7 @@ func (h *ImageHandler) pullDeviceConfigAsync(device model.Device, deviceTS int64
 				if json.Unmarshal([]byte(configRaw), &parsed) == nil && parsed.DisplayOrientation != "" {
 					updates["orientation"] = parsed.DisplayOrientation
 				}
-				if uerr := h.db.Model(&model.Device{}).Where("id = ?", device.ID).Updates(updates).Error; uerr != nil {
+				if uerr := h.db.Model(&model.Device{}).Where("id = ? AND server_authoritative = ?", device.ID, false).Updates(updates).Error; uerr != nil {
 					log.Printf("Config sync: failed to store pulled config for device %d: %v", device.ID, uerr)
 				} else {
 					log.Printf("Config sync: pulled newer config from device %s (ts=%d)", device.Host, deviceTS)
@@ -1029,7 +1201,7 @@ func (h *ImageHandler) serveProcessedImage(
 	}
 
 	// 5. Config Sync: push config payload if server has newer config
-	h.applyConfigSync(c, &device, deviceFound)
+	delivery := h.applyConfigSync(c, &device, deviceFound, true)
 
 	// Set Content-Length header
 	c.Response().Header().Set("Content-Length", fmt.Sprintf("%d", len(processedBytes)))
@@ -1038,5 +1210,7 @@ func (h *ImageHandler) serveProcessedImage(
 	if firmwareVersion == "" || !photoframe.SupportsEPDGZ(firmwareVersion) {
 		contentType = "image/png"
 	}
-	return c.Blob(http.StatusOK, contentType, processedBytes)
+	err = c.Blob(http.StatusOK, contentType, processedBytes)
+	h.completeConfigDelivery(delivery, err)
+	return err
 }

@@ -175,6 +175,10 @@ func (c *Client) resolveHost(host string) (string, error) {
 	if c.resolvedIP != "" {
 		return c.resolvedIP, nil
 	}
+	if parsedHost, port, err := net.SplitHostPort(host); err == nil && net.ParseIP(parsedHost) != nil {
+		c.resolvedIP = net.JoinHostPort(parsedHost, port)
+		return c.resolvedIP, nil
+	}
 
 	// If it's already an IP, cache and return it
 	if net.ParseIP(host) != nil {
@@ -483,6 +487,29 @@ func (c *Client) PushProcessingSettings(settings []byte) error {
 		return fmt.Errorf("device returned status: %d", resp.StatusCode)
 	}
 
+	return nil
+}
+
+// PushPalette POSTs the complete palette to the firmware's existing endpoint.
+func (c *Client) PushPalette(palette []byte) error {
+	ip, err := c.resolveHost(c.host)
+	if err != nil {
+		return fmt.Errorf("failed to resolve device %s: %w", c.host, err)
+	}
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/settings/palette", ip), bytes.NewBuffer(palette))
+	if err != nil {
+		return err
+	}
+	req.Host = c.host
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("device returned status: %d", resp.StatusCode)
+	}
 	return nil
 }
 
