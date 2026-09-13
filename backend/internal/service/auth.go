@@ -194,9 +194,15 @@ func (s *AuthService) GenerateDeviceToken(userID uint, username string, name str
 }
 
 func (s *AuthService) GetOrGenerateDeviceToken(userID uint, username string, name string, deviceID *uint) (string, error) {
+	return s.GetOrGenerateDeviceTokenWithDB(s.db, userID, username, name, deviceID)
+}
+
+// GetOrGenerateDeviceTokenWithDB lets callers include credential creation in
+// the same transaction as the device configuration that references it.
+func (s *AuthService) GetOrGenerateDeviceTokenWithDB(db *gorm.DB, userID uint, username string, name string, deviceID *uint) (string, error) {
 	// Look for existing key for this device
 	var apiKey model.APIKey
-	query := s.db.Where("user_id = ?", userID)
+	query := db.Where("user_id = ?", userID)
 	if deviceID != nil {
 		query = query.Where("device_id = ?", *deviceID)
 	} else {
@@ -222,8 +228,22 @@ func (s *AuthService) GetOrGenerateDeviceToken(userID uint, username string, nam
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 		return token.SignedString(s.secret())
 	}
-	// No existing key — create a new one
-	return s.GenerateDeviceToken(userID, username, name, deviceID)
+	apiKey = model.APIKey{UserID: userID, DeviceID: deviceID, Name: name}
+	if err := db.Create(&apiKey).Error; err != nil {
+		return "", err
+	}
+	var devID uint
+	if deviceID != nil {
+		devID = *deviceID
+	}
+	claims := JWTClaims{
+		UserID: userID, Username: username, KeyID: apiKey.ID, DeviceID: devID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(87600 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()), Subject: "device",
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.secret())
 }
 
 // parseToken verifies the signature (HS256 only) with the given secret and

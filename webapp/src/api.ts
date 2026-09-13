@@ -83,6 +83,8 @@ export interface Device {
   // Display color model reported by the device: "gc16" (16-level grayscale),
   // "spectra6" (6-color), or undefined for legacy firmware (treated as color).
   display_type?: string;
+  server_authoritative: boolean;
+  config_sync_pending: boolean;
   created_at: string;
   model?: any;
 }
@@ -134,7 +136,8 @@ export const updateDevice = async (
   calendarId?: string,
   dateFormat?: string,
   source?: string,
-  backgroundColor?: string
+  backgroundColor?: string,
+  serverAuthoritative?: boolean
 ) => {
   const response = await api.put(`/devices/${id}`, {
     name,
@@ -156,6 +159,7 @@ export const updateDevice = async (
     date_format: dateFormat || '',
     source: source || '',
     background_color: backgroundColor || '',
+    server_authoritative: serverAuthoritative,
   });
   return response.data;
 };
@@ -164,6 +168,11 @@ export const updateDevice = async (
 // palette) from the device. Requires the device to be online.
 export const refreshDevice = async (id: number) => {
   const response = await api.post(`/devices/${id}/refresh`);
+  return response.data;
+};
+
+export const importDeviceSettings = async (id: number) => {
+  const response = await api.post(`/devices/${id}/import-settings`);
   return response.data;
 };
 

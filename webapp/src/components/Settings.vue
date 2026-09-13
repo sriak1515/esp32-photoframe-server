@@ -1436,6 +1436,21 @@
                             ></v-text-field>
                           </v-col>
                         </v-row>
+                        <v-row v-if="!isAddingDevice">
+                          <v-col cols="12">
+                            <v-switch
+                              v-model="editingDevice.server_authoritative"
+                              label="Server manages this device's settings"
+                              color="primary"
+                              hide-details
+                            ></v-switch>
+                            <div
+                              class="text-caption text-medium-emphasis ml-10"
+                            >
+                              {{ deviceAuthorityMessage }}
+                            </div>
+                          </v-col>
+                        </v-row>
                         <v-row>
                           <v-col cols="12" md="6">
                             <v-text-field
@@ -2595,10 +2610,29 @@
                       variant="text"
                       size="small"
                       :loading="syncingFromDevice"
-                      @click="syncFromDevice"
+                      @click="refreshInventory"
                     >
-                      <v-icon start>mdi-sync</v-icon>
-                      Sync from Device
+                      <v-icon start>mdi-refresh</v-icon>
+                      Refresh Device Info
+                    </v-btn>
+                    <v-btn
+                      v-if="!isAddingDevice"
+                      color="info"
+                      variant="text"
+                      size="small"
+                      :disabled="
+                        !canImportDeviceSettings(persistedServerAuthoritative)
+                      "
+                      :loading="syncingFromDevice"
+                      :title="
+                        persistedServerAuthoritative
+                          ? 'Disable server management before importing device settings'
+                          : 'Import settings from device'
+                      "
+                      @click="importFromDevice"
+                    >
+                      <v-icon start>mdi-download</v-icon>
+                      Import Settings
                     </v-btn>
                     <v-spacer></v-spacer>
                     <v-btn
@@ -2640,8 +2674,8 @@ import {
   listDevices,
   addDevice,
   deleteDevice,
-  updateDevice,
   refreshDevice,
+  importDeviceSettings,
   type Device,
   createURLSource,
   updateURLSource,
@@ -2661,6 +2695,11 @@ import TopicManager from './TopicManager.vue';
 import SecurityTab from './SecurityTab.vue';
 import RotationSchedule from './RotationSchedule.vue';
 import { intervalToCron, cronToInterval, isValidCron } from '../utils/cron';
+import {
+  DEFAULT_SERVER_AUTHORITATIVE,
+  canImportDeviceSettings,
+  deviceSyncMessage,
+} from '../utils/deviceSync';
 
 const { smAndDown } = useDisplay(); // true on phones / small tablets
 const store = useSettingsStore();
@@ -2861,6 +2900,13 @@ watch(isGrayscale, (gray) => {
 });
 const savingDeviceConfig = ref(false);
 const syncingFromDevice = ref(false);
+const persistedServerAuthoritative = ref(DEFAULT_SERVER_AUTHORITATIVE);
+const deviceAuthorityMessage = computed(() =>
+  deviceSyncMessage(
+    editingDevice.server_authoritative ?? DEFAULT_SERVER_AUTHORITATIVE,
+    editingDevice.config_sync_pending ?? true
+  )
+);
 
 // Device config (synced remotely to device)
 const deviceConfig = reactive<Record<string, any>>({
@@ -3301,7 +3347,7 @@ const loadDeviceConfig = async (deviceId: number) => {
   }
 };
 
-const syncFromDevice = async () => {
+const refreshInventory = async () => {
   if (!editingDevice.id) return;
   syncingFromDevice.value = true;
   try {
@@ -3312,12 +3358,33 @@ const syncFromDevice = async () => {
       (d: Device) => d.id === editingDevice.id
     );
     if (updated) Object.assign(editingDevice, updated);
-    // Reload device config to reflect synced values
-    await loadDeviceConfig(editingDevice.id!);
-    showMessage('Settings synced from device');
+    showMessage('Device inventory refreshed');
   } catch (e: any) {
     showMessage(
-      'Failed to sync: ' + (e.response?.data?.error || e.message),
+      'Failed to refresh device info: ' +
+        (e.response?.data?.error || e.message),
+      true
+    );
+  } finally {
+    syncingFromDevice.value = false;
+  }
+};
+
+const importFromDevice = async () => {
+  if (!editingDevice.id || persistedServerAuthoritative.value) return;
+  syncingFromDevice.value = true;
+  try {
+    await importDeviceSettings(editingDevice.id);
+    await loadDevices();
+    const updated = availableDevices.value.find(
+      (d: Device) => d.id === editingDevice.id
+    );
+    if (updated) Object.assign(editingDevice, updated);
+    await loadDeviceConfig(editingDevice.id);
+    showMessage('Settings imported from device');
+  } catch (e: any) {
+    showMessage(
+      'Failed to import settings: ' + (e.response?.data?.error || e.message),
       true
     );
   } finally {
@@ -3510,6 +3577,8 @@ const openAddDeviceDialog = () => {
     calendar_id: '',
     date_format: '',
     source: '',
+    server_authoritative: DEFAULT_SERVER_AUTHORITATIVE,
+    config_sync_pending: true,
   });
   Object.assign(deviceConfig, {
     auto_rotate: false,
@@ -3552,6 +3621,7 @@ const deviceURL = (device: Device) => {
 
 const editDevice = async (device: Device) => {
   Object.assign(editingDevice, device);
+  persistedServerAuthoritative.value = device.server_authoritative;
   if (!editingDevice.background_color) {
     editingDevice.background_color = 'white';
   }
@@ -3662,30 +3732,6 @@ const saveDevice = async () => {
         useThisServer.value && deviceConfig.rotation_mode === 'url'
           ? selectedSource.value
           : '';
-      // Save server-side device fields
-      await updateDevice(
-        editingDevice.id,
-        editingDevice.name!,
-        editingDevice.host!,
-        deviceConfig.display_orientation || editingDevice.orientation!,
-        editingDevice.enable_collage!,
-        editingDevice.show_date!,
-        editingDevice.show_photo_date || false,
-        editingDevice.show_weather!,
-        editingDevice.weather_lat || 0,
-        editingDevice.weather_lon || 0,
-        editingDevice.ai_provider || '',
-        editingDevice.ai_model || '',
-        editingDevice.ai_prompt || '',
-        editingDevice.layout || 'photo_overlay',
-        deviceProcessing.scaleMode || 'cover',
-        editingDevice.show_calendar || false,
-        editingDevice.calendar_id || '',
-        editingDevice.date_format || '',
-        deviceSource,
-        deviceProcessing.backgroundColor || ''
-      );
-
       // Save device remote config (config + processing + palette)
       const [startH, startM] = deviceConfig.sleep_start_time
         .split(':')
@@ -3779,6 +3825,30 @@ const saveDevice = async () => {
         : {};
 
       const result = await updateDeviceConfig(editingDevice.id, {
+        device: {
+          name: editingDevice.name,
+          host: editingDevice.host,
+          orientation:
+            deviceConfig.display_orientation || editingDevice.orientation,
+          enable_collage: editingDevice.enable_collage,
+          show_date: editingDevice.show_date,
+          show_photo_date: editingDevice.show_photo_date || false,
+          show_weather: editingDevice.show_weather,
+          weather_lat: editingDevice.weather_lat || 0,
+          weather_lon: editingDevice.weather_lon || 0,
+          ai_provider: editingDevice.ai_provider || '',
+          ai_model: editingDevice.ai_model || '',
+          ai_prompt: editingDevice.ai_prompt || '',
+          layout: editingDevice.layout || 'photo_overlay',
+          display_mode: deviceProcessing.scaleMode || 'cover',
+          show_calendar: editingDevice.show_calendar || false,
+          calendar_id: editingDevice.calendar_id || '',
+          date_format: editingDevice.date_format || '',
+          source: deviceSource,
+          background_color: deviceProcessing.backgroundColor || '',
+          server_authoritative:
+            editingDevice.server_authoritative ?? DEFAULT_SERVER_AUTHORITATIVE,
+        },
         config: {
           device_name: editingDevice.name,
           auto_rotate: deviceConfig.auto_rotate,
@@ -3862,11 +3932,18 @@ const saveDevice = async () => {
         }
       }
 
-      if (result.push_result === 'synced') {
-        showMessage('Device saved and config pushed to device.');
+      editingDevice.config_sync_pending = result.config_sync_pending;
+      persistedServerAuthoritative.value =
+        editingDevice.server_authoritative ?? DEFAULT_SERVER_AUTHORITATIVE;
+      if (result.push_result === 'pushed') {
+        showMessage('Device saved and settings pushed to device endpoints.');
+      } else if (result.push_result === 'legacy') {
+        showMessage(
+          'Device saved. Legacy timestamp reconciliation remains enabled.'
+        );
       } else {
         showMessage(
-          'Device saved. Device is offline — config will sync on next image fetch.'
+          'Device saved. Settings are pending the next successful device fetch.'
         );
       }
     }

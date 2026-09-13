@@ -85,25 +85,26 @@ func (h *DeviceHandler) AddDevice(c echo.Context) error {
 func (h *DeviceHandler) UpdateDevice(c echo.Context) error {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var req struct {
-		Name            string  `json:"name"`
-		Host            string  `json:"host"`
-		Orientation     string  `json:"orientation"`
-		EnableCollage   bool    `json:"enable_collage"`
-		ShowDate        bool    `json:"show_date"`
-		ShowPhotoDate   bool    `json:"show_photo_date"`
-		ShowWeather     bool    `json:"show_weather"`
-		WeatherLat      float64 `json:"weather_lat"`
-		WeatherLon      float64 `json:"weather_lon"`
-		AIProvider      string  `json:"ai_provider"`
-		AIModel         string  `json:"ai_model"`
-		AIPrompt        string  `json:"ai_prompt"`
-		Layout          string  `json:"layout"`
-		DisplayMode     string  `json:"display_mode"`
-		BackgroundColor string  `json:"background_color"`
-		ShowCalendar    bool    `json:"show_calendar"`
-		CalendarID      string  `json:"calendar_id"`
-		DateFormat      string  `json:"date_format"`
-		Source          string  `json:"source"`
+		Name                string  `json:"name"`
+		Host                string  `json:"host"`
+		Orientation         string  `json:"orientation"`
+		EnableCollage       bool    `json:"enable_collage"`
+		ShowDate            bool    `json:"show_date"`
+		ShowPhotoDate       bool    `json:"show_photo_date"`
+		ShowWeather         bool    `json:"show_weather"`
+		WeatherLat          float64 `json:"weather_lat"`
+		WeatherLon          float64 `json:"weather_lon"`
+		AIProvider          string  `json:"ai_provider"`
+		AIModel             string  `json:"ai_model"`
+		AIPrompt            string  `json:"ai_prompt"`
+		Layout              string  `json:"layout"`
+		DisplayMode         string  `json:"display_mode"`
+		BackgroundColor     string  `json:"background_color"`
+		ShowCalendar        bool    `json:"show_calendar"`
+		CalendarID          string  `json:"calendar_id"`
+		DateFormat          string  `json:"date_format"`
+		Source              string  `json:"source"`
+		ServerAuthoritative *bool   `json:"server_authoritative"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return respondError(c, http.StatusBadRequest, "invalid request")
@@ -113,21 +114,26 @@ func (h *DeviceHandler) UpdateDevice(c echo.Context) error {
 		req.Layout = model.LayoutPhotoOverlay
 	}
 
-	device, err := h.deviceService.UpdateDevice(uint(id), req.Name, req.Host, req.Orientation, req.EnableCollage, req.ShowDate, req.ShowPhotoDate, req.ShowWeather, req.WeatherLat, req.WeatherLon, req.AIProvider, req.AIModel, req.AIPrompt, req.Layout, req.DisplayMode, req.ShowCalendar, req.CalendarID, req.DateFormat)
+	device, err := h.deviceService.UpdateDevice(uint(id), req.Name, req.Host, req.Orientation, req.EnableCollage, req.ShowDate, req.ShowPhotoDate, req.ShowWeather, req.WeatherLat, req.WeatherLon, req.AIProvider, req.AIModel, req.AIPrompt, req.Layout, req.DisplayMode, req.ShowCalendar, req.CalendarID, req.DateFormat, req.Source, req.BackgroundColor, req.ServerAuthoritative)
 	if err != nil {
 		return respondError(c, http.StatusInternalServerError, err.Error())
 	}
-	// Per-device image source + fit-mode background color for the unified
-	// /image endpoint (kept out of the long UpdateDevice signature; persisted
-	// directly).
-	if err := h.db.Model(device).Updates(map[string]interface{}{
-		"source":           req.Source,
-		"background_color": req.BackgroundColor,
-	}).Error; err != nil {
+	return c.JSON(http.StatusOK, device)
+}
+
+// POST /api/devices/:id/import-settings
+func (h *DeviceHandler) ImportDeviceSettings(c echo.Context) error {
+	id, _ := strconv.Atoi(c.Param("id"))
+	device, err := h.deviceService.ImportDeviceSettings(uint(id))
+	if err != nil {
+		if strings.Contains(err.Error(), "managed by the server") {
+			return respondError(c, http.StatusConflict, err.Error())
+		}
+		if strings.Contains(err.Error(), "failed to fetch") {
+			return respondError(c, http.StatusServiceUnavailable, err.Error())
+		}
 		return respondError(c, http.StatusInternalServerError, err.Error())
 	}
-	device.Source = req.Source
-	device.BackgroundColor = req.BackgroundColor
 	return c.JSON(http.StatusOK, device)
 }
 

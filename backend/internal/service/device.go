@@ -116,8 +116,9 @@ func (s *DeviceService) AddDevice(host string, enableCollage, showDate, showPhot
 	if displayMode == "" {
 		displayMode = "cover"
 	}
+	deviceProc = mergeServerProcessingDefaults(deviceProc)
 
-	device := &model.Device{
+	device := model.NewDevice(model.Device{
 		Name:                     name,
 		Host:                     host,
 		Width:                    width,
@@ -139,7 +140,7 @@ func (s *DeviceService) AddDevice(host string, enableCollage, showDate, showPhot
 		DeviceConfig:             deviceConfig,
 		DeviceProcessingSettings: deviceProc,
 		DeviceColorPalette:       devicePalette,
-	}
+	})
 	if err := s.db.Create(device).Error; err != nil {
 		return nil, err
 	}
@@ -155,7 +156,7 @@ func (s *DeviceService) AddDevice(host string, enableCollage, showDate, showPhot
 // Hardware-derived fields (Width, Height, BoardName, DeviceConfig,
 // DeviceProcessingSettings, DeviceColorPalette) are only written by
 // AddDevice and RefreshDeviceFromHardware.
-func (s *DeviceService) UpdateDevice(id uint, name, host, orientation string, enableCollage, showDate, showPhotoDate, showWeather bool, weatherLat, weatherLon float64, aiProvider, aiModel, aiPrompt string, layout string, displayMode string, showCalendar bool, calendarID string, dateFormat string) (*model.Device, error) {
+func (s *DeviceService) UpdateDevice(id uint, name, host, orientation string, enableCollage, showDate, showPhotoDate, showWeather bool, weatherLat, weatherLon float64, aiProvider, aiModel, aiPrompt string, layout string, displayMode string, showCalendar bool, calendarID string, dateFormat, source, backgroundColor string, serverAuthoritative *bool) (*model.Device, error) {
 	var device model.Device
 	if err := s.db.First(&device, id).Error; err != nil {
 		return nil, errors.New("device not found")
@@ -191,17 +192,61 @@ func (s *DeviceService) UpdateDevice(id uint, name, host, orientation string, en
 	device.ShowCalendar = showCalendar
 	device.CalendarID = calendarID
 	device.DateFormat = dateFormat
-
-	if err := s.db.Save(&device).Error; err != nil {
+	updates := map[string]interface{}{
+		"name": name, "host": host, "orientation": orientation,
+		"enable_collage": enableCollage, "show_date": showDate,
+		"show_photo_date": showPhotoDate, "show_weather": showWeather,
+		"weather_lat": weatherLat, "weather_lon": weatherLon,
+		"ai_provider": aiProvider, "ai_model": aiModel, "ai_prompt": aiPrompt,
+		"layout": layout, "display_mode": displayMode, "show_calendar": showCalendar,
+		"calendar_id": calendarID, "date_format": dateFormat,
+		"source": source, "background_color": backgroundColor,
+	}
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		var current model.Device
+		if err := tx.First(&current, id).Error; err != nil {
+			return err
+		}
+		if serverAuthoritative != nil && *serverAuthoritative != current.ServerAuthoritative {
+			updates["server_authoritative"] = *serverAuthoritative
+			updates["config_sync_pending"] = *serverAuthoritative
+			if *serverAuthoritative {
+				updates["config_last_updated"] = NextConfigGeneration(current.ConfigLastUpdated)
+			}
+		}
+		return tx.Model(&model.Device{}).Where("id = ?", id).Updates(updates).Error
+	}); err != nil {
+		return nil, err
+	}
+	if err := s.db.First(&device, id).Error; err != nil {
 		return nil, err
 	}
 	return &device, nil
 }
 
-// RefreshDeviceFromHardware pulls live state from the device (dimensions,
-// board name, config, processing settings, palette) and writes it onto the
-// stored row. Unlike UpdateDevice this requires the device to be reachable
-// and returns an error if any of the critical fetches fail.
+func mergeServerProcessingDefaults(raw string) string {
+	values := map[string]interface{}{}
+	if strings.TrimSpace(raw) != "" {
+		_ = json.Unmarshal([]byte(raw), &values)
+	}
+	defaults := map[string]interface{}{
+		"converter":         "epaper-image-convert",
+		"autoMode":          true,
+		"epdOptimizePreset": "balanced",
+	}
+	for key, value := range defaults {
+		if _, exists := values[key]; !exists {
+			values[key] = value
+		}
+	}
+	serialized, err := json.Marshal(values)
+	if err != nil {
+		return raw
+	}
+	return string(serialized)
+}
+
+// RefreshDeviceFromHardware refreshes firmware-owned inventory only.
 func (s *DeviceService) RefreshDeviceFromHardware(id uint) (*model.Device, error) {
 	var device model.Device
 	if err := s.db.First(&device, id).Error; err != nil {
@@ -214,9 +259,6 @@ func (s *DeviceService) RefreshDeviceFromHardware(id uint) (*model.Device, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch system info: %w", err)
 	}
-	if sysInfo.DeviceName != "" {
-		device.Name = sysInfo.DeviceName
-	}
 	device.Width = sysInfo.Width
 	device.Height = sysInfo.Height
 	if sysInfo.BoardName != "" {
@@ -225,32 +267,77 @@ func (s *DeviceService) RefreshDeviceFromHardware(id uint) (*model.Device, error
 	if sysInfo.DisplayType != "" {
 		device.DisplayType = sysInfo.DisplayType
 	}
+	device.FirmwareVersion = sysInfo.Version
 
-	configRaw, err := pfClient.FetchConfig()
+	if err := s.db.Model(&model.Device{}).Where("id = ?", device.ID).Updates(map[string]interface{}{
+		"width":            device.Width,
+		"height":           device.Height,
+		"board_name":       device.BoardName,
+		"display_type":     device.DisplayType,
+		"firmware_version": device.FirmwareVersion,
+	}).Error; err != nil {
+		return nil, err
+	}
+	if sysInfo.DeviceName != "" {
+		if err := s.db.Model(&model.Device{}).Where("id = ? AND server_authoritative = ?", device.ID, false).Update("name", sysInfo.DeviceName).Error; err != nil {
+			return nil, err
+		}
+	}
+	if err := s.db.First(&device, id).Error; err != nil {
+		return nil, err
+	}
+	return &device, nil
+}
+
+// ImportDeviceSettings explicitly imports firmware-managed settings for a
+// non-authoritative device while retaining server-only processing keys.
+func (s *DeviceService) ImportDeviceSettings(id uint) (*model.Device, error) {
+	var device model.Device
+	if err := s.db.First(&device, id).Error; err != nil {
+		return nil, errors.New("device not found")
+	}
+	if device.ServerAuthoritative {
+		return nil, errors.New("device settings are managed by the server")
+	}
+
+	client := photoframe.NewClient(device.Host)
+	configRaw, err := client.FetchConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch device config: %w", err)
 	}
-	device.DeviceConfig = configRaw
-	var parsedConfig struct {
+	processingRaw, err := client.FetchProcessingSettings()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch processing settings: %w", err)
+	}
+	paletteRaw, err := client.FetchPalette()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch palette: %w", err)
+	}
+
+	mergedRaw, err := MergeFirmwareProcessing(device.DeviceProcessingSettings, processingRaw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid processing settings from device: %w", err)
+	}
+
+	updates := map[string]interface{}{
+		"device_config":              configRaw,
+		"device_processing_settings": string(mergedRaw),
+		"device_color_palette":       paletteRaw,
+	}
+	var config struct {
 		DisplayOrientation string `json:"display_orientation"`
 	}
-	if json.Unmarshal([]byte(configRaw), &parsedConfig) == nil && parsedConfig.DisplayOrientation != "" {
-		device.Orientation = parsedConfig.DisplayOrientation
+	if json.Unmarshal([]byte(configRaw), &config) == nil && config.DisplayOrientation != "" {
+		updates["orientation"] = config.DisplayOrientation
 	}
-
-	if procRaw, err := pfClient.FetchProcessingSettings(); err != nil {
-		log.Printf("Failed to fetch processing settings from %s: %v", device.Host, err)
-	} else {
-		device.DeviceProcessingSettings = procRaw
+	result := s.db.Model(&device).Where("server_authoritative = ?", false).Updates(updates)
+	if result.Error != nil {
+		return nil, result.Error
 	}
-
-	if paletteRaw, err := pfClient.FetchPalette(); err != nil {
-		log.Printf("Failed to fetch palette from %s: %v", device.Host, err)
-	} else {
-		device.DeviceColorPalette = paletteRaw
+	if result.RowsAffected != 1 {
+		return nil, errors.New("device became server-managed during import")
 	}
-
-	if err := s.db.Save(&device).Error; err != nil {
+	if err := s.db.First(&device, id).Error; err != nil {
 		return nil, err
 	}
 	return &device, nil

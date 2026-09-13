@@ -11,6 +11,52 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestAuthoritativeMigrationPreservesDesiredState(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "upgrade.db")
+	gdb, err := Init(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, _ := gdb.DB()
+	driver, err := sqlite3.WithInstance(sqlDB, &sqlite3.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := migrate.NewWithDatabaseInstance(migrationsURL(t), "sqlite3", driver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Migrate(39); err != nil {
+		t.Fatal(err)
+	}
+	const config = `{"device_name":"kept"}`
+	const processing = `{"converter":"kept"}`
+	const palette = `{"black":{"r":1}}`
+	if err := gdb.Exec("INSERT INTO devices(id, device_config, device_processing_settings, device_color_palette, config_last_updated) VALUES (1, ?, ?, ?, 123)", config, processing, palette).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Up(); err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		DeviceConfig             string
+		DeviceProcessingSettings string
+		DeviceColorPalette       string
+		ConfigLastUpdated        int64
+		ServerAuthoritative      bool
+		ConfigSyncPending        bool
+	}
+	if err := gdb.Table("devices").Where("id = ?", 1).Take(&got).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got.DeviceConfig != config || got.DeviceProcessingSettings != processing || got.DeviceColorPalette != palette || got.ConfigLastUpdated != 123 {
+		t.Fatalf("migration changed desired state: %+v", got)
+	}
+	if !got.ServerAuthoritative || !got.ConfigSyncPending {
+		t.Fatalf("migration defaults = authoritative:%v pending:%v, want true/true", got.ServerAuthoritative, got.ConfigSyncPending)
+	}
+}
+
 // migratedDB opens a fresh SQLite database through the production Init path and
 // applies the full migration chain, returning the connection. This is the real
 // startup path (Init's DSN enables _foreign_keys=on).
