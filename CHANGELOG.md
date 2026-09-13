@@ -477,3 +477,6 @@
 
 ### Fixed
 - Fix OAuth redirect URL for Google Photos authentication
+## Unreleased
+
+- Hardened Immich date filtering with strict calendar-date validation, consistent local enforcement, and safe queue overrides. Immich search date bounds remain a candidate-retrieval optimization because server boundary inclusivity varies by version; returned assets are always checked locally.

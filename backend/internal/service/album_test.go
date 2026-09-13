@@ -25,6 +25,7 @@ func setupAlbumDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(
 		&model.Image{}, &model.Album{},
 		&model.ImageAlbumMembership{}, &model.DeviceAlbumMapping{},
+		&model.ImmichCache{}, &model.DeviceQueueItem{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}

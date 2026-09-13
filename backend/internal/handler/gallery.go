@@ -58,8 +58,21 @@ func (h *GalleryHandler) ListPhotos(c echo.Context) error {
 	}
 
 	query := h.db.Model(&model.Image{})
+	var policy service.ImmichDatePolicy
+	var err error
+	if source == "" || source == model.SourceImmich {
+		policy, err = h.immich.DatePolicy()
+		if err != nil {
+			return respondError(c, http.StatusBadRequest, err.Error())
+		}
+	}
 	if source != "" {
 		query = query.Where("source = ?", source)
+	}
+	if source == model.SourceImmich {
+		query = policy.Apply(query, "images.photo_taken_date")
+	} else if source == "" {
+		query = policy.ApplyToMixedSources(query, "images.source", "images.photo_taken_date")
 	}
 	// Optional album filter (internal album row id) — group the gallery by album.
 	if albumStr := c.QueryParam("album"); albumStr != "" {
@@ -245,6 +258,19 @@ func (h *GalleryHandler) GetThumbnail(c echo.Context) error {
 
 	// Case 1b: Immich (Proxy or local cache)
 	if item.Source == model.SourceImmich {
+		var queued int64
+		if err := h.db.Model(&model.DeviceQueueItem{}).Where("image_id = ?", item.ID).Count(&queued).Error; err != nil {
+			return respondError(c, http.StatusInternalServerError, "failed to check queue reference")
+		}
+		if queued == 0 {
+			policy, err := h.immich.DatePolicy()
+			if err != nil {
+				return respondError(c, http.StatusBadRequest, err.Error())
+			}
+			if !policy.Eligible(item.PhotoTakenDate) {
+				return respondError(c, http.StatusNotFound, "photo not found")
+			}
+		}
 		// Try local cache first — works even when Immich is offline.
 		var cache model.ImmichCache
 		if err := h.db.Where("image_id = ?", item.ID).First(&cache).Error; err == nil {

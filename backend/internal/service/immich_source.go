@@ -30,10 +30,13 @@ func (s *immichSource) Fetch(req *imagesource.Request) (*imagesource.Response, e
 	if req.Device != nil {
 		albumIDs = DeviceAlbumIDs(s.db, req.Device.ID, model.SourceImmich)
 	}
-	dateFrom, dateTo := s.immich.DateRange()
+	policy, err := s.immich.DatePolicy()
+	if err != nil {
+		return nil, err
+	}
 	cacheEnabled := s.cache != nil && s.cache.Enabled()
 	pick := func(orientation string, exclude []uint) (model.Image, error) {
-		return PickRandomDBPhotoForAlbumsFiltered(s.db, model.SourceImmich, orientation, albumIDs, exclude, dateFrom, dateTo, cacheEnabled)
+		return pickRandomDBPhotoForAlbumsWithPolicy(s.db, model.SourceImmich, orientation, albumIDs, exclude, policy, cacheEnabled)
 	}
 	load := func(item model.Image) (image.Image, error) {
 		// Try cache first

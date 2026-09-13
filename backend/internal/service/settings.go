@@ -14,6 +14,75 @@ type CalendarConfigProvider struct {
 	settings *SettingsService
 }
 
+func (s *SettingsService) ImmichDatePolicy() (ImmichDatePolicy, error) {
+	s.dateMu.RLock()
+	defer s.dateMu.RUnlock()
+	from, to, err := readImmichDatePair(s.db)
+	if err != nil {
+		return ImmichDatePolicy{}, err
+	}
+	return NewImmichDatePolicy(from, to)
+}
+
+// SetImmichDatePair validates and commits both bounds before notifying listeners.
+func (s *SettingsService) SetImmichDatePair(from, to string) error {
+	s.dateMu.Lock()
+	defer s.dateMu.Unlock()
+	return s.setImmichDatePair(from, to)
+}
+
+func (s *SettingsService) setImmichDatePair(from, to string) error {
+	if _, err := NewImmichDatePolicy(from, to); err != nil {
+		return err
+	}
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		for key, value := range map[string]string{"immich_date_from": from, "immich_date_to": to} {
+			if err := tx.Save(&model.Setting{Key: key, Value: value}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	s.notifyChanged("immich_date_from", from)
+	s.notifyChanged("immich_date_to", to)
+	return nil
+}
+
+// UpdateImmichDatePair fills omitted bounds from the persisted pair before validating it.
+func (s *SettingsService) UpdateImmichDatePair(from, to *string) error {
+	s.dateMu.Lock()
+	defer s.dateMu.Unlock()
+	storedFrom, storedTo, err := readImmichDatePair(s.db)
+	if err != nil {
+		return err
+	}
+	if from != nil {
+		storedFrom = *from
+	}
+	if to != nil {
+		storedTo = *to
+	}
+	return s.setImmichDatePair(storedFrom, storedTo)
+}
+
+func readImmichDatePair(db *gorm.DB) (string, string, error) {
+	var rows []model.Setting
+	if err := db.Where("key IN ?", []string{"immich_date_from", "immich_date_to"}).Find(&rows).Error; err != nil {
+		return "", "", err
+	}
+	var from, to string
+	for _, row := range rows {
+		if row.Key == "immich_date_from" {
+			from = row.Value
+		} else if row.Key == "immich_date_to" {
+			to = row.Value
+		}
+	}
+	return from, to, nil
+}
+
 func NewCalendarConfigProvider(s *SettingsService) *CalendarConfigProvider {
 	return &CalendarConfigProvider{settings: s}
 }
@@ -25,6 +94,7 @@ func (p *CalendarConfigProvider) GetGoogleConfig() (googlephotos.Config, error) 
 type SettingsService struct {
 	db        *gorm.DB
 	mu        sync.Mutex
+	dateMu    sync.RWMutex
 	callbacks []func(key, value string)
 }
 
@@ -42,6 +112,10 @@ func (s *SettingsService) Get(key string) (string, error) {
 }
 
 func (s *SettingsService) Set(key string, value string) error {
+	if key == "immich_date_from" || key == "immich_date_to" {
+		s.dateMu.Lock()
+		defer s.dateMu.Unlock()
+	}
 	setting := model.Setting{Key: key, Value: value}
 	// Save will create or update
 	if err := s.db.Save(&setting).Error; err != nil {

@@ -101,34 +101,8 @@ func (s *ImmichService) immichMemoryMode() string {
 	return ImmichMemoryModeAll
 }
 
-// DateRange returns the configured date range filter for Immich photos.
-// An empty/zero time means no bound on that side.
-func (s *ImmichService) DateRange() (from, to time.Time) {
-	if v, _ := s.settings.Get("immich_date_from"); v != "" {
-		if t, err := time.Parse("2006-01-02", v); err == nil {
-			from = t
-		}
-	}
-	if v, _ := s.settings.Get("immich_date_to"); v != "" {
-		if t, err := time.Parse("2006-01-02", v); err == nil {
-			// Include the entire "to" day by adding 23h59m.
-			to = time.Date(t.Year(), t.Month(), t.Day(), 23, 59, 59, 0, t.Location())
-		}
-	}
-	return
-}
-
-// ApplyDateRange adds WHERE clauses for the configured date range to a GORM
-// query on the images table. No-ops when both bounds are zero.
-func (s *ImmichService) ApplyDateRange(q *gorm.DB) *gorm.DB {
-	from, to := s.DateRange()
-	if !from.IsZero() {
-		q = q.Where("photo_taken_at >= ?", from)
-	}
-	if !to.IsZero() {
-		q = q.Where("photo_taken_at <= ?", to)
-	}
-	return q
+func (s *ImmichService) DatePolicy() (ImmichDatePolicy, error) {
+	return s.settings.ImmichDatePolicy()
 }
 
 func (s *ImmichService) isAutoSyncConfigured() bool {
@@ -293,15 +267,42 @@ func (s *ImmichService) ListRemoteAlbums() ([]RemoteAlbum, error) {
 // album (real or virtual), mapped to source-agnostic RemoteAssets. RAW assets
 // are skipped (no preview/thumbnail API).
 func (s *ImmichService) FetchAlbumAssets(album model.Album) ([]RemoteAsset, error) {
+	policy, err := s.DatePolicy()
+	if err != nil {
+		return nil, err
+	}
+	return s.fetchAlbumAssets(album, policy)
+}
+
+func (s *ImmichService) fetchAlbumAssets(album model.Album, policy ImmichDatePolicy) ([]RemoteAsset, error) {
 	client, err := s.getClient()
 	if err != nil {
 		return nil, err
 	}
-	assets, err := s.fetchAssetsForAlbum(client, album)
+	assets, err := s.fetchAssetsForAlbum(client, album, policy)
 	if err != nil {
 		return nil, err
 	}
+	extIDs := make([]string, 0, len(assets))
+	for _, a := range assets {
+		extIDs = append(extIDs, a.ID)
+	}
+	existingByID := map[string]model.Image{}
+	if len(extIDs) > 0 {
+		var existing []model.Image
+		if err := s.db.Select("id", "external_id", "photo_taken_date").Where("source = ? AND external_id IN ?", model.SourceImmich, extIDs).Find(&existing).Error; err != nil {
+			return nil, err
+		}
+		for i := range existing {
+			existingByID[existing[i].ExternalID] = existing[i]
+		}
+	}
 	out := make([]RemoteAsset, 0, len(assets))
+	type metadataUpdate struct {
+		id     uint
+		values map[string]interface{}
+	}
+	var filteredUpdates []metadataUpdate
 	for _, a := range assets {
 		if a.Type != "IMAGE" {
 			continue
@@ -315,14 +316,49 @@ func (s *ImmichService) FetchAlbumAssets(album model.Album) ([]RemoteAsset, erro
 		if photoDate == nil {
 			photoDate = parseImmichDate(a.LocalDateTime)
 		}
+		capture := captureDate(a.LocalDateTime, a.ExifInfo.DateTimeOriginal)
+		effective := capture
+		if effective == nil {
+			if existing, ok := existingByID[a.ID]; ok {
+				effective = existing.PhotoTakenDate
+			}
+		}
+		if !policy.Eligible(effective) {
+			if existing, ok := existingByID[a.ID]; ok {
+				updates := map[string]interface{}{}
+				if photoDate != nil {
+					updates["photo_taken_at"] = photoDate
+				}
+				if capture != nil {
+					updates["photo_taken_date"] = capture
+				}
+				if len(updates) > 0 {
+					filteredUpdates = append(filteredUpdates, metadataUpdate{id: existing.ID, values: updates})
+				}
+			}
+			continue
+		}
 		out = append(out, RemoteAsset{
-			ExternalID:   a.ID,
-			FilePath:     a.OriginalFileName,
-			Width:        w,
-			Height:       h,
-			Orientation:  determineOrientation(w, h, a.ExifInfo.Orientation),
-			PhotoTakenAt: photoDate,
+			ExternalID:     a.ID,
+			FilePath:       a.OriginalFileName,
+			Width:          w,
+			Height:         h,
+			Orientation:    determineOrientation(w, h, a.ExifInfo.Orientation),
+			PhotoTakenAt:   photoDate,
+			PhotoTakenDate: capture,
 		})
+	}
+	if len(filteredUpdates) > 0 {
+		if err := s.db.Transaction(func(tx *gorm.DB) error {
+			for _, update := range filteredUpdates {
+				if err := tx.Model(&model.Image{}).Where("id = ?", update.id).Updates(update.values).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }
@@ -332,6 +368,10 @@ func (s *ImmichService) FetchAlbumAssets(album model.Album) ([]RemoteAsset, erro
 // plus an image_album_memberships row per (asset, album). Stale memberships and
 // orphaned image rows are pruned so the local pool tracks Immich.
 func (s *ImmichService) ImportPhotos() error {
+	policy, err := s.DatePolicy()
+	if err != nil {
+		return err
+	}
 	client, err := s.getClient()
 	if err != nil {
 		return err
@@ -341,7 +381,7 @@ func (s *ImmichService) ImportPhotos() error {
 	// existing setups keep syncing after the multi-album migration.
 	s.ensureGlobalAlbumSeed(client)
 
-	_, err = SyncAlbumSource(s.db, s)
+	_, err = SyncAlbumSource(s.db, &immichAlbumSource{service: s, policy: policy})
 	return err
 }
 
@@ -349,28 +389,27 @@ func (s *ImmichService) ImportPhotos() error {
 // or a virtual mode album (all / favorites / memories). The configured date
 // range filter is applied server-side for virtual albums (which use the search
 // API) and client-side for real albums (whose endpoint lacks date params).
-func (s *ImmichService) fetchAssetsForAlbum(client *immich.Client, album model.Album) ([]immich.Asset, error) {
-	dateFrom, dateTo := s.DateRange()
-
+func (s *ImmichService) fetchAssetsForAlbum(client *immich.Client, album model.Album, policy ImmichDatePolicy) ([]immich.Asset, error) {
+	dateFrom, dateTo := policy.SearchBounds()
 	if album.Kind == model.AlbumKindVirtual {
 		switch album.ExternalID {
 		case model.ImmichVirtualAll:
 			filter := immich.SearchMetadataRequest{Type: "IMAGE"}
-			if !dateFrom.IsZero() {
-				filter.TakenAfter = dateFrom.Format(time.RFC3339)
+			if dateFrom != "" {
+				filter.TakenAfter = dateFrom
 			}
-			if !dateTo.IsZero() {
-				filter.TakenBefore = dateTo.Format(time.RFC3339)
+			if dateTo != "" {
+				filter.TakenBefore = dateTo
 			}
 			return client.SearchAssets(filter)
 		case model.ImmichVirtualFavorites:
 			t := true
 			filter := immich.SearchMetadataRequest{Type: "IMAGE", IsFavorite: &t}
-			if !dateFrom.IsZero() {
-				filter.TakenAfter = dateFrom.Format(time.RFC3339)
+			if dateFrom != "" {
+				filter.TakenAfter = dateFrom
 			}
-			if !dateTo.IsZero() {
-				filter.TakenBefore = dateTo.Format(time.RFC3339)
+			if dateTo != "" {
+				filter.TakenBefore = dateTo
 			}
 			return client.SearchAssets(filter)
 		case model.ImmichVirtualMemories:
@@ -386,26 +425,20 @@ func (s *ImmichService) fetchAssetsForAlbum(client *immich.Client, album model.A
 	if err != nil {
 		return nil, err
 	}
-	if dateFrom.IsZero() && dateTo.IsZero() {
-		return all, nil
-	}
-	out := make([]immich.Asset, 0, len(all))
-	for _, a := range all {
-		ts := parseImmichDate(a.ExifInfo.DateTimeOriginal)
-		if ts == nil {
-			ts = parseImmichDate(a.LocalDateTime)
-		}
-		if ts != nil {
-			if !dateFrom.IsZero() && ts.Before(dateFrom) {
-				continue
-			}
-			if !dateTo.IsZero() && ts.After(dateTo) {
-				continue
-			}
-		}
-		out = append(out, a)
-	}
-	return out, nil
+	return all, nil
+}
+
+type immichAlbumSource struct {
+	service *ImmichService
+	policy  ImmichDatePolicy
+}
+
+func (s *immichAlbumSource) Source() string { return model.SourceImmich }
+func (s *immichAlbumSource) ListRemoteAlbums() ([]RemoteAlbum, error) {
+	return s.service.ListRemoteAlbums()
+}
+func (s *immichAlbumSource) FetchAlbumAssets(album model.Album) ([]RemoteAsset, error) {
+	return s.service.fetchAlbumAssets(album, s.policy)
 }
 
 // ensureGlobalAlbumSeed materializes the legacy global immich_source_mode /

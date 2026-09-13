@@ -38,7 +38,18 @@ type ImmichCacheService struct {
 // NewImmichCacheService constructs the service.
 func NewImmichCacheService(db *gorm.DB, settings *SettingsService, immich *ImmichService, dataDir string) *ImmichCacheService {
 	silent := db.Session(&gorm.Session{Logger: db.Logger.LogMode(logger.Silent)})
-	return &ImmichCacheService{db: db, silentDB: silent, settings: settings, immich: immich, dataDir: dataDir}
+	s := &ImmichCacheService{db: db, silentDB: silent, settings: settings, immich: immich, dataDir: dataDir}
+	if dir, err := s.CacheDir(); err != nil {
+		log.Printf("[immich-cache] startup recovery skipped: %v", err)
+	} else {
+		immichCacheFilesMu.Lock()
+		err = recoverStagedCacheFiles(db, dir)
+		immichCacheFilesMu.Unlock()
+		if err != nil {
+			log.Printf("[immich-cache] startup recovery failed: %v", err)
+		}
+	}
+	return s
 }
 
 // CacheDir returns the absolute path to the cache directory, creating it if needed.
@@ -72,6 +83,25 @@ func (s *ImmichCacheService) Lookup(imageID uint) string {
 // image is already cached, it updates the cached_at timestamp. Returns the
 // path to the cached file.
 func (s *ImmichCacheService) CacheImage(imageID uint, assetID string) (string, error) {
+	policy, err := s.immich.DatePolicy()
+	if err != nil {
+		return "", err
+	}
+	immichCacheFilesMu.Lock()
+	defer immichCacheFilesMu.Unlock()
+	return s.cacheImage(imageID, assetID, false, policy)
+}
+
+func (s *ImmichCacheService) cacheImage(imageID uint, assetID string, queueOverride bool, policy ImmichDatePolicy) (string, error) {
+	if !queueOverride {
+		var image model.Image
+		if err := s.db.First(&image, imageID).Error; err != nil {
+			return "", err
+		}
+		if !policy.Eligible(image.PhotoTakenDate) {
+			return "", fmt.Errorf("Immich image is outside the configured date range")
+		}
+	}
 	data, err := s.immich.DownloadPhoto(assetID)
 	if err != nil {
 		return "", fmt.Errorf("download for cache: %w", err)
@@ -83,6 +113,12 @@ func (s *ImmichCacheService) CacheImage(imageID uint, assetID string) (string, e
 	}
 
 	cachePath := filepath.Join(dir, assetID+".jpg")
+	persisted := false
+	defer func() {
+		if !persisted {
+			_ = os.Remove(cachePath)
+		}
+	}()
 
 	tmpDir, err := os.MkdirTemp("", "immich-cache-*")
 	if err != nil {
@@ -155,15 +191,22 @@ func (s *ImmichCacheService) CacheImage(imageID uint, assetID string) (string, e
 			return "", fmt.Errorf("insert cache row: %w", err)
 		}
 	} else {
-		s.db.Model(&existing).Updates(map[string]interface{}{
+		result := s.db.Model(&existing).Updates(map[string]interface{}{
 			"file_path":  cachePath,
 			"width":      width,
 			"height":     height,
 			"size_bytes": size,
 			"cached_at":  now,
 		})
+		if result.Error != nil {
+			return "", fmt.Errorf("update cache row: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return "", fmt.Errorf("update cache row affected zero rows")
+		}
 	}
 
+	persisted = true
 	return cachePath, nil
 }
 
@@ -237,6 +280,11 @@ func (s *ImmichCacheService) populate() {
 	if !s.Enabled() {
 		return
 	}
+	policy, err := s.immich.DatePolicy()
+	if err != nil {
+		log.Printf("[immich-cache] invalid date policy: %v", err)
+		return
+	}
 	atomic.StoreInt32(&s.populating, 1)
 	defer atomic.StoreInt32(&s.populating, 0)
 	log.Println("[immich-cache] starting background population cycle")
@@ -252,7 +300,7 @@ func (s *ImmichCacheService) populate() {
 	}
 
 	// Fetch all candidates per bucket (unbounded).
-	buckets := s.fetchBuckets(weights)
+	buckets := s.fetchBuckets(weights, policy)
 
 	// Build set of already-cached image IDs to skip.
 	cached := s.cachedImageIDs()
@@ -319,7 +367,10 @@ func (s *ImmichCacheService) populate() {
 				continue
 			}
 			cachedSet[img.ID] = struct{}{}
-			if _, err := s.CacheImage(img.ID, img.ExternalID); err != nil {
+			immichCacheFilesMu.Lock()
+			_, err := s.cacheImage(img.ID, img.ExternalID, false, policy)
+			immichCacheFilesMu.Unlock()
+			if err != nil {
 				log.Printf("[immich-cache] failed to cache image %d (%s): %v", img.ID, img.ExternalID, err)
 			}
 			added++
@@ -343,11 +394,9 @@ type cacheBucket struct {
 }
 
 // fetchBuckets loads all candidates per weight bucket.
-func (s *ImmichCacheService) fetchBuckets(weights map[string]int) []cacheBucket {
+func (s *ImmichCacheService) fetchBuckets(weights map[string]int, policy ImmichDatePolicy) []cacheBucket {
 	var buckets []cacheBucket
-
-	dateFrom, dateTo := s.immich.DateRange()
-	dateCond, dateArgs := s.buildDateRangeClause(dateFrom, dateTo)
+	dateCond, dateArgs := buildDatePolicyClause(policy, "i.photo_taken_date")
 
 	if w, ok := weights["favorites"]; ok && w > 0 {
 		var imgs []model.Image
@@ -361,7 +410,7 @@ func (s *ImmichCacheService) fetchBuckets(weights map[string]int) []cacheBucket 
 	}
 	if w, ok := weights["recent"]; ok && w > 0 {
 		var imgs []model.Image
-		query := `SELECT * FROM images
+		query := `SELECT * FROM images i
 			WHERE source = ? AND photo_taken_at > datetime('now', '-30 days') AND deleted_at IS NULL` + dateCond
 		args := append([]interface{}{model.SourceImmich}, dateArgs...)
 		s.db.Raw(query, args...).Scan(&imgs)
@@ -369,14 +418,14 @@ func (s *ImmichCacheService) fetchBuckets(weights map[string]int) []cacheBucket 
 	}
 	if w, ok := weights["random"]; ok && w > 0 {
 		var imgs []model.Image
-		query := `SELECT * FROM images WHERE source = ? AND deleted_at IS NULL` + dateCond + ` ORDER BY RANDOM()`
+		query := `SELECT * FROM images i WHERE source = ? AND deleted_at IS NULL` + dateCond + ` ORDER BY RANDOM()`
 		args := append([]interface{}{model.SourceImmich}, dateArgs...)
 		s.db.Raw(query, args...).Scan(&imgs)
 		buckets = append(buckets, cacheBucket{images: imgs, weight: w})
 	}
 	if w, ok := weights["old"]; ok && w > 0 {
 		var imgs []model.Image
-		query := `SELECT * FROM images
+		query := `SELECT * FROM images i
 			WHERE source = ? AND (photo_taken_at IS NULL OR photo_taken_at <= datetime('now', '-30 days'))
 			AND deleted_at IS NULL` + dateCond + ` ORDER BY RANDOM()`
 		args := append([]interface{}{model.SourceImmich}, dateArgs...)
@@ -388,16 +437,22 @@ func (s *ImmichCacheService) fetchBuckets(weights map[string]int) []cacheBucket 
 }
 
 // buildDateRangeClause returns a SQL WHERE fragment and args for the date range.
-func (s *ImmichCacheService) buildDateRangeClause(from, to time.Time) (string, []interface{}) {
+func buildDatePolicyClause(policy ImmichDatePolicy, column string) (string, []interface{}) {
 	var conds []string
 	var args []interface{}
-	if !from.IsZero() {
-		conds = append(conds, " AND photo_taken_at >= ?")
-		args = append(args, from)
+	if policy.Active() {
+		conds = append(conds, " AND "+column+" IS NOT NULL")
 	}
-	if !to.IsZero() {
-		conds = append(conds, " AND photo_taken_at <= ?")
-		args = append(args, to)
+	if policy.from != "" {
+		conds = append(conds, " AND "+column+" >= ?")
+		args = append(args, policy.from)
+	}
+	if policy.toBefore != "" {
+		conds = append(conds, " AND "+column+" < ?")
+		args = append(args, policy.toBefore)
+	} else if policy.toEntered != "" {
+		conds = append(conds, " AND "+column+" <= ?")
+		args = append(args, policy.toEntered)
 	}
 	return strings.Join(conds, ""), args
 }
@@ -433,6 +488,12 @@ func (s *ImmichCacheService) cachedImageIDs() []uint {
 
 // prune evicts oldest cache entries until budget is satisfied.
 func (s *ImmichCacheService) prune() {
+	immichCacheFilesMu.Lock()
+	defer immichCacheFilesMu.Unlock()
+	s.pruneLocked()
+}
+
+func (s *ImmichCacheService) pruneLocked() {
 	maxImages := s.maxImages()
 	maxSizeMB := s.maxSizeMB()
 	if maxImages <= 0 && maxSizeMB <= 0 {
@@ -462,6 +523,8 @@ func (s *ImmichCacheService) prune() {
 
 // gcOrphanCacheFiles removes cache entries whose image row has been deleted.
 func (s *ImmichCacheService) gcOrphanCacheFiles() {
+	immichCacheFilesMu.Lock()
+	defer immichCacheFilesMu.Unlock()
 	var entries []model.ImmichCache
 	s.db.Find(&entries)
 	for _, entry := range entries {
@@ -477,6 +540,16 @@ func (s *ImmichCacheService) gcOrphanCacheFiles() {
 // CacheForQueue downloads and caches an image for queue use. Designed to be
 // called in a goroutine; errors are logged but not returned.
 func (s *ImmichCacheService) CacheForQueue(imageID uint) {
+	immichCacheFilesMu.Lock()
+	defer immichCacheFilesMu.Unlock()
+	policy, err := s.immich.DatePolicy()
+	if err != nil {
+		return
+	}
+	var refs int64
+	if err := s.db.Model(&model.DeviceQueueItem{}).Where("image_id = ?", imageID).Count(&refs).Error; err != nil || refs == 0 {
+		return
+	}
 	if s.Lookup(imageID) != "" {
 		return
 	}
@@ -487,15 +560,17 @@ func (s *ImmichCacheService) CacheForQueue(imageID uint) {
 	if img.ExternalID == "" {
 		return
 	}
-	if _, err := s.CacheImage(imageID, img.ExternalID); err != nil {
+	if _, err := s.cacheImage(imageID, img.ExternalID, true, policy); err != nil {
 		log.Printf("[immich-cache] queue pre-cache failed for image %d: %v", imageID, err)
 		return
 	}
-	s.prune()
+	s.pruneLocked()
 }
 
 // ClearCache deletes all cached images from disk and the database.
 func (s *ImmichCacheService) ClearCache() error {
+	immichCacheFilesMu.Lock()
+	defer immichCacheFilesMu.Unlock()
 	var entries []model.ImmichCache
 	if err := s.db.Find(&entries).Error; err != nil {
 		return fmt.Errorf("list cache entries: %w", err)

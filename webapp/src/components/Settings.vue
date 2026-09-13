@@ -364,7 +364,6 @@
                     ></v-select>
                   </v-col>
                 </v-row>
-
                 <div class="d-flex flex-wrap ga-2 mt-4">
                   <v-btn
                     color="primary"
@@ -539,7 +538,7 @@
                       clearable
                       hint="Only sync/show photos taken after this date"
                       persistent-hint
-                      @update:model-value="saveSettingsInternal()"
+                      @update:model-value="saveImmichDates()"
                     ></v-text-field>
                   </v-col>
                   <v-col cols="12" md="6">
@@ -552,10 +551,15 @@
                       clearable
                       hint="Only sync/show photos taken before this date"
                       persistent-hint
-                      @update:model-value="saveSettingsInternal()"
+                      @update:model-value="saveImmichDates()"
                     ></v-text-field>
                   </v-col>
                 </v-row>
+                <div class="text-caption text-grey mb-2">
+                  Immich search bounds reduce fetched candidates; local
+                  capture-date checks enforce the selected days on all returned
+                  photos.
+                </div>
 
                 <v-row class="mt-1">
                   <v-col cols="12" md="6">
@@ -4503,6 +4507,20 @@ const saveSettingsInternal = async () => {
     pexels_randomize_results: String(form.pexels_randomize_results),
     device_image_base_url: form.device_image_base_url,
   });
+};
+
+const saveImmichDates = async () => {
+  try {
+    await store.saveSettings({
+      immich_date_from: form.immich_date_from || '',
+      immich_date_to: form.immich_date_to || '',
+    });
+  } catch (err: any) {
+    showMessage(
+      err.response?.data?.error || err.message || 'Failed to save date range',
+      true
+    );
+  }
 };
 
 const save = async () => {

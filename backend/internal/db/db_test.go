@@ -146,6 +146,65 @@ func TestMigrationsApplyCleanly(t *testing.T) {
 	}
 }
 
+func TestPhotoTakenDateMigrationPreservesStateAndRollsBack(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "capture-date.db")
+	gdb, err := Init(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, _ := gdb.DB()
+	driver, err := sqlite3.WithInstance(sqlDB, &sqlite3.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := migrate.NewWithDatabaseInstance(migrationsURL(t), "sqlite3", driver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Migrate(40); err != nil {
+		t.Fatal(err)
+	}
+	queries := []string{
+		"INSERT INTO devices(id) VALUES (1)",
+		"INSERT INTO images(id, source, external_id, photo_taken_at) VALUES (10, 'immich', 'asset', '2024-03-01T23:30:00-02:00')",
+		"INSERT INTO albums(id, source, external_id, name) VALUES (20, 'immich', 'album', 'Album')",
+		"INSERT INTO image_album_memberships(image_id, album_id) VALUES (10, 20)",
+		"INSERT INTO device_image_queue(device_id, image_id, position, source) VALUES (1, 10, 10, 'immich')",
+		"INSERT INTO immich_caches(image_id, asset_id, file_path, width, height, cached_at) VALUES (10, 'asset', '/tmp/kept', 1, 1, CURRENT_TIMESTAMP)",
+	}
+	for _, query := range queries {
+		if err := gdb.Exec(query).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := m.Migrate(41); err != nil {
+		t.Fatal(err)
+	}
+	var date string
+	if err := gdb.Raw("SELECT photo_taken_date FROM images WHERE id = 10").Scan(&date).Error; err != nil {
+		t.Fatal(err)
+	}
+	if date != "2024-03-01" {
+		t.Fatalf("backfill = %q", date)
+	}
+	for _, table := range []string{"images", "image_album_memberships", "device_image_queue", "immich_caches"} {
+		var count int64
+		if err := gdb.Table(table).Count(&count).Error; err != nil || count != 1 {
+			t.Fatalf("%s count=%d err=%v", table, count, err)
+		}
+	}
+	if err := m.Steps(-1); err != nil {
+		t.Fatal(err)
+	}
+	if gdb.Migrator().HasColumn("images", "photo_taken_date") {
+		t.Fatal("rollback retained photo_taken_date")
+	}
+	var count int64
+	if err := gdb.Table("images").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("rollback images=%d err=%v", count, err)
+	}
+}
+
 // TestForeignKeyCascades verifies the ON DELETE CASCADE / SET NULL constraints
 // added in migration 000032 actually fire — i.e. that Init enables enforcement
 // (_foreign_keys=on) and the rebuilt junction/child tables carry the FKs. This

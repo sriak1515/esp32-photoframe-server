@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -123,6 +124,10 @@ func (h *QueueHandler) AddToQueue(c echo.Context) error {
 
 	items, warning, err := h.queue.Add(deviceID, req.ImageIDs)
 	if err != nil {
+		var configErr *service.ImmichDatePolicyError
+		if errors.As(err, &configErr) {
+			return respondError(c, http.StatusBadRequest, err.Error())
+		}
 		return respondError(c, http.StatusInternalServerError, "failed to add to queue")
 	}
 
@@ -157,7 +162,8 @@ func (h *QueueHandler) RemoveFromQueue(c echo.Context) error {
 	}
 
 	if err := h.queue.Remove(deviceID, uint(itemID)); err != nil {
-		return respondError(c, http.StatusNotFound, "queue item not found")
+		if errors.Is(err, service.ErrQueueItemNotFound) { return respondError(c, http.StatusNotFound, err.Error()) }
+		return respondError(c, http.StatusInternalServerError, err.Error())
 	}
 
 	return c.NoContent(http.StatusNoContent)
@@ -172,7 +178,7 @@ func (h *QueueHandler) ClearQueue(c echo.Context) error {
 
 	count, err := h.queue.Clear(deviceID)
 	if err != nil {
-		return respondError(c, http.StatusInternalServerError, "failed to clear queue")
+		return respondError(c, http.StatusInternalServerError, err.Error())
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{

@@ -209,6 +209,13 @@ func (h *DeviceHandler) PushToDevice(c echo.Context) error {
 			tmp.Close()
 			imagePath = tempFile
 		} else if img.Source == model.SourceImmich {
+			policy, err := h.immichService.DatePolicy()
+			if err != nil {
+				return respondError(c, http.StatusBadRequest, err.Error())
+			}
+			if !policy.Eligible(img.PhotoTakenDate) {
+				return respondError(c, http.StatusBadRequest, "Immich image is outside the configured date range")
+			}
 			// Try local cache first — works even when Immich is offline.
 			if h.immichCache != nil && h.immichCache.Enabled() {
 				if cached := h.immichCache.Lookup(img.ID); cached != "" {
