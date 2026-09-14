@@ -411,6 +411,9 @@ func (h *GalleryHandler) DeletePhoto(c echo.Context) error {
 	if err := h.db.First(&item, id).Error; err != nil {
 		return respondError(c, http.StatusNotFound, "photo not found")
 	}
+	if imageHasQueueReference(h.db, item.ID) {
+		return respondError(c, http.StatusConflict, "photo is referenced by a device queue")
+	}
 
 	// Delete the row first. If we removed the file before the DB delete and
 	// the DB delete then failed (e.g. SQLite contention), we'd be left with
@@ -450,6 +453,13 @@ func (h *GalleryHandler) DeletePhotos(c echo.Context) error {
 	if err := query.Find(&items).Error; err != nil {
 		return respondError(c, http.StatusInternalServerError, "failed to find photos")
 	}
+	ids := make([]uint, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	if imagesHaveQueueReferences(h.db, ids) {
+		return respondError(c, http.StatusConflict, "one or more photos are referenced by a device queue")
+	}
 
 	// Delete DB rows first; clean up files only after the DB delete succeeds
 	// so a mid-operation failure leaves recoverable orphan files rather than
@@ -485,6 +495,18 @@ func (h *GalleryHandler) DeletePhotos(c echo.Context) error {
 		"count":   len(items),
 		"message": fmt.Sprintf("Deleted %d photos", len(items)),
 	})
+}
+
+func imageHasQueueReference(db *gorm.DB, imageID uint) bool {
+	return imagesHaveQueueReferences(db, []uint{imageID})
+}
+
+func imagesHaveQueueReferences(db *gorm.DB, imageIDs []uint) bool {
+	if len(imageIDs) == 0 || !db.Migrator().HasTable(&model.DeviceQueueItem{}) {
+		return false
+	}
+	var count int64
+	return db.Model(&model.DeviceQueueItem{}).Where("image_id IN ?", imageIDs).Count(&count).Error != nil || count > 0
 }
 
 // URL Proxy Handlers

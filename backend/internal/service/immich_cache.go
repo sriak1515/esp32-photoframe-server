@@ -79,6 +79,23 @@ func (s *ImmichCacheService) Lookup(imageID uint) string {
 	return row.FilePath
 }
 
+// QueueCacheStatus reports whether queue delivery can use a valid local copy.
+func (s *ImmichCacheService) QueueCacheStatus(imageID uint) string {
+	var row model.ImmichCache
+	if err := s.silentDB.Where("image_id = ?", imageID).First(&row).Error; err != nil {
+		return "missing"
+	}
+	f, err := os.Open(row.FilePath)
+	if err != nil {
+		return "missing"
+	}
+	defer f.Close()
+	if _, _, err := image.DecodeConfig(f); err != nil {
+		return "corrupt"
+	}
+	return "ready"
+}
+
 // CacheImage downloads, resizes, and stores an image in the cache. If the
 // image is already cached, it updates the cached_at timestamp. Returns the
 // path to the cached file.
@@ -191,6 +208,7 @@ func (s *ImmichCacheService) cacheImage(imageID uint, assetID string, queueOverr
 			return "", fmt.Errorf("insert cache row: %w", err)
 		}
 	} else {
+		oldPath := existing.FilePath
 		result := s.db.Model(&existing).Updates(map[string]interface{}{
 			"file_path":  cachePath,
 			"width":      width,
@@ -203,6 +221,9 @@ func (s *ImmichCacheService) cacheImage(imageID uint, assetID string, queueOverr
 		}
 		if result.RowsAffected == 0 {
 			return "", fmt.Errorf("update cache row affected zero rows")
+		}
+		if oldPath != "" && oldPath != cachePath {
+			_ = os.Remove(oldPath)
 		}
 	}
 
@@ -513,7 +534,13 @@ func (s *ImmichCacheService) pruneLocked() {
 		}
 
 		var oldest model.ImmichCache
-		if err := s.silentDB.Order("cached_at ASC").First(&oldest).Error; err != nil {
+		query := s.silentDB.Order("cached_at ASC")
+		if s.db.Migrator().HasTable(&model.DeviceQueueItem{}) {
+			protected := s.db.Model(&model.DeviceQueueItem{}).
+				Select("image_id").Where("state <> ?", model.QueueStateDelivered)
+			query = query.Where("image_id NOT IN (?)", protected)
+		}
+		if err := query.First(&oldest).Error; err != nil {
 			break
 		}
 		os.Remove(oldest.FilePath)
@@ -537,34 +564,45 @@ func (s *ImmichCacheService) gcOrphanCacheFiles() {
 	}
 }
 
-// CacheForQueue downloads and caches an image for queue use. Designed to be
-// called in a goroutine; errors are logged but not returned.
-func (s *ImmichCacheService) CacheForQueue(imageID uint) {
+// CacheForQueue downloads and caches an image for queue use. Callers keep this
+// asynchronous so enqueue persistence never depends on upstream I/O.
+func (s *ImmichCacheService) CacheForQueue(imageID uint) error {
+	return s.CacheForQueueWithMode(imageID, false)
+}
+
+// CacheForQueueWithMode refreshes an existing entry when force is true, which
+// repairs cache bytes that queue loading proved corrupt.
+func (s *ImmichCacheService) CacheForQueueWithMode(imageID uint, force bool) error {
 	immichCacheFilesMu.Lock()
 	defer immichCacheFilesMu.Unlock()
 	policy, err := s.immich.DatePolicy()
 	if err != nil {
-		return
+		return err
 	}
 	var refs int64
-	if err := s.db.Model(&model.DeviceQueueItem{}).Where("image_id = ?", imageID).Count(&refs).Error; err != nil || refs == 0 {
-		return
+	if err := s.db.Model(&model.DeviceQueueItem{}).
+		Where("image_id = ? AND state <> ?", imageID, model.QueueStateDelivered).Count(&refs).Error; err != nil || refs == 0 {
+		if err != nil {
+			return err
+		}
+		return nil
 	}
-	if s.Lookup(imageID) != "" {
-		return
+	if !force && s.Lookup(imageID) != "" {
+		return nil
 	}
 	var img model.Image
 	if err := s.db.First(&img, imageID).Error; err != nil {
-		return
+		return err
 	}
 	if img.ExternalID == "" {
-		return
+		return PermanentQueueFailure("missing_source_identifier", "queued Immich image has no asset identifier")
 	}
 	if _, err := s.cacheImage(imageID, img.ExternalID, true, policy); err != nil {
 		log.Printf("[immich-cache] queue pre-cache failed for image %d: %v", imageID, err)
-		return
+		return RetryableQueueFailure("upstream_unavailable", "Immich queue pre-cache is temporarily unavailable")
 	}
 	s.pruneLocked()
+	return nil
 }
 
 // ClearCache deletes all cached images from disk and the database.
@@ -576,10 +614,18 @@ func (s *ImmichCacheService) ClearCache() error {
 		return fmt.Errorf("list cache entries: %w", err)
 	}
 	for _, entry := range entries {
+		var refs int64
+		if err := s.db.Model(&model.DeviceQueueItem{}).
+			Where("image_id = ? AND state <> ?", entry.ImageID, model.QueueStateDelivered).Count(&refs).Error; err != nil {
+			return fmt.Errorf("check queue cache references: %w", err)
+		}
+		if refs > 0 {
+			continue
+		}
 		os.Remove(entry.FilePath)
-	}
-	if err := s.db.Unscoped().Where("1 = 1").Delete(&model.ImmichCache{}).Error; err != nil {
-		return fmt.Errorf("clear cache table: %w", err)
+		if err := s.db.Unscoped().Delete(&entry).Error; err != nil {
+			return fmt.Errorf("delete cache entry: %w", err)
+		}
 	}
 	log.Printf("[immich-cache] cleared %d cached images", len(entries))
 	return nil

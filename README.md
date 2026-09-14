@@ -217,6 +217,12 @@ Frames are configured from the dashboard — the server issues the access token 
 - **`GET /image`**: The endpoint frames use. The device is identified by its bearer token and served its **server-assigned source** (cropped and dithered for its panel). Configure the source under **Settings → Devices**; a device with no source assigned gets an error.
 - **`GET /image/<source>`**: A legacy URL form still routed for older firmware — the `<source>` is **ignored**. A device is only ever served the source assigned to it in the server, never one it isn't assigned.
 
+### Queue Delivery Semantics
+
+Queued images use a fixed seven-minute best-effort transfer lease. Repeated image requests from the same frame during that window replay the same queue occurrence; the first request after the lease expires advances the queue. This protects the unchanged firmware's three transport attempts from consuming multiple queued images.
+
+A successful HTTP response only means the server offered the image bytes. Current firmware does not acknowledge durable receipt, decoding, physical display, or panel refresh, so the queue cannot guarantee exactly-once display. If a frame never polls again, its leased occurrence remains in the queue.
+
 ### Authentication
 
 All image endpoints require authentication via Bearer token:

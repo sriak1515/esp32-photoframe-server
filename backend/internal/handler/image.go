@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/imagesource"
+	"github.com/aitjcize/esp32-photoframe-server/backend/internal/middleware"
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/model"
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/service"
 	"github.com/aitjcize/esp32-photoframe-server/backend/pkg/gcalendar"
@@ -62,11 +63,12 @@ type ImageHandler struct {
 	db             *gorm.DB
 	dataDir        string
 	queueService   *service.QueueService
-	queueLoader    *service.QueueImageLoader
+	queueLoad      func(*model.DeviceQueueItem) (image.Image, error)
+	processImage   func(image.Image, map[string]string) ([]byte, []byte, error)
 }
 
 func NewImageHandler(deps ImageHandlerDeps) *ImageHandler {
-	return &ImageHandler{
+	h := &ImageHandler{
 		settings:       deps.Settings,
 		renderer:       deps.Renderer,
 		processor:      deps.Processor,
@@ -78,8 +80,14 @@ func NewImageHandler(deps ImageHandlerDeps) *ImageHandler {
 		db:             deps.DB,
 		dataDir:        deps.DataDir,
 		queueService:   deps.QueueService,
-		queueLoader:    deps.QueueLoader,
 	}
+	if deps.QueueLoader != nil {
+		h.queueLoad = deps.QueueLoader.Load
+	}
+	if deps.Processor != nil {
+		h.processImage = deps.Processor.ProcessImage
+	}
+	return h
 }
 
 // deviceBaseURL returns the base URL devices use to reach this server: the
@@ -99,14 +107,15 @@ func (h *ImageHandler) deviceBaseURL(c echo.Context) string {
 	return scheme + "://" + c.Request().Host
 }
 
-// identifyDevice resolves the requesting device SOLELY from its per-device
-// token (the device_id set by the auth middleware). The previous X-Hostname /
+// identifyDevice resolves the requesting device SOLELY from its typed,
+// token-bound principal. The previous X-Hostname /
 // client-IP fallbacks were client-spoofable and have been removed — the token
 // is the single source of truth. Returns the device and whether one was found.
 func (h *ImageHandler) identifyDevice(c echo.Context) (model.Device, bool) {
 	var device model.Device
-	if devID, ok := c.Get("device_id").(uint); ok && devID > 0 {
-		if err := h.db.First(&device, devID).Error; err == nil {
+	principal, ok := middleware.GetPrincipal(c)
+	if ok && principal.Type == middleware.PrincipalDevice && principal.DeviceID != nil && *principal.DeviceID > 0 {
+		if err := h.db.First(&device, *principal.DeviceID).Error; err == nil {
 			return device, true
 		}
 	}
@@ -114,6 +123,11 @@ func (h *ImageHandler) identifyDevice(c echo.Context) (model.Device, bool) {
 }
 
 func (h *ImageHandler) ServeImage(c echo.Context) error {
+	principal, ok := middleware.GetPrincipal(c)
+	if !ok || principal.Type != middleware.PrincipalDevice || principal.DeviceID == nil || *principal.DeviceID == 0 {
+		return respondError(c, http.StatusForbidden, "bound device token required")
+	}
+
 	// 1. Identify the device from its token (the single source of truth).
 	device, deviceFound := h.identifyDevice(c)
 
@@ -251,44 +265,89 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 	}
 
 	deferredDeliveryAllowed := true
-	// 1.2. Check queue first — serve queued images before falling back to source
-	if deviceFound && h.queueService != nil && h.queueLoader != nil {
-		queueItem, err := h.queueService.GetNextForDevice(device.ID)
-		if err != nil {
-			deferredDeliveryAllowed = false
-			log.Printf("Queue check failed for device %d: %v", device.ID, err)
-		} else if queueItem != nil {
-			// Load image from queue
-			img, loadErr := h.queueLoader.Load(queueItem)
-			if loadErr != nil {
-				deferredDeliveryAllowed = false
+	// Queue lifecycle decisions are short database transactions. Loading,
+	// processing, and writing happen only after Poll has released its transaction.
+	if deviceFound && h.queueService != nil && h.queueLoad != nil {
+		for {
+			decision, pollErr := h.queueService.Poll(device.ID)
+			if pollErr != nil {
+				log.Printf("Queue poll failed for device %d: %v", device.ID, pollErr)
 				var configErr *service.ImmichDatePolicyError
-				if errors.As(loadErr, &configErr) {
-					return respondError(c, http.StatusBadRequest, loadErr.Error())
+				if errors.As(pollErr, &configErr) {
+					return respondError(c, http.StatusBadRequest, configErr.Error())
 				}
-				// Preserve the entry: cache/network/decoding failures can be transient.
-				log.Printf("Queue image load failed for device %d, image %d: %v", device.ID, queueItem.ImageID, loadErr)
-			} else {
-				// Get photo taken at
+				return queueRetryableError(c, "queue temporarily unavailable")
+			}
+			switch decision.Action {
+			case service.QueuePollNone:
+				goto queueDone
+			case service.QueuePollBlocked:
+				return queueRetryableError(c, "queued image delivery already in progress")
+			case service.QueuePollComplete:
+				if decision.Item == nil || decision.Item.LeaseExpiresAt == nil {
+					return queueRetryableError(c, "queued image completion unavailable")
+				}
+				if err := h.queueService.CompleteDelivery(device.ID, decision.Item.ID, *decision.Item.LeaseExpiresAt); err != nil {
+					log.Printf("Queue completion failed for device %d, item %d: %v", device.ID, decision.Item.ID, err)
+					var configErr *service.ImmichDatePolicyError
+					if errors.As(err, &configErr) {
+						return respondError(c, http.StatusBadRequest, configErr.Error())
+					}
+					return queueRetryableError(c, "queued image completion temporarily unavailable")
+				}
+				continue
+			case service.QueuePollClaim, service.QueuePollReplay:
+				queueItem := decision.Item
+				if queueItem == nil || queueItem.ClaimExpiresAt == nil {
+					return queueRetryableError(c, "queued image claim unavailable")
+				}
+				img, loadErr := h.queueLoad(queueItem)
+				if loadErr != nil {
+					var configErr *service.ImmichDatePolicyError
+					if errors.As(loadErr, &configErr) {
+						return respondError(c, http.StatusBadRequest, loadErr.Error())
+					}
+					h.failQueueClaim(device.ID, queueItem, loadErr)
+					return queueRetryableError(c, "queued image is temporarily unavailable")
+				}
+
 				var photoTakenAt *time.Time
 				if device.ShowPhotoDate && queueItem.Image != nil {
 					photoTakenAt = queueItem.Image.PhotoTakenAt
 				}
-
-				// Build and deliver the response before consuming the queue reference.
-				if err := h.serveProcessedImage(c, device, deviceFound, img, photoTakenAt,
+				var offered *model.DeviceQueueItem
+				delivery, serveErr := h.serveProcessedImage(c, device, deviceFound, img, photoTakenAt,
 					logicalW, logicalH, nativeW, nativeH, orientation, layout, displayMode,
 					showDate, showPhotoDate, showWeather, lat, lon, showCalendar,
-					device.DateFormat, firmwareVersion); err != nil {
+					device.DateFormat, firmwareVersion, func() error {
+						var err error
+						offered, err = h.queueService.BeginLeaseOffer(device.ID, queueItem.ID, *queueItem.ClaimExpiresAt)
+						return err
+					})
+				if serveErr != nil {
+					if offered != nil {
+						if err := h.queueService.FailLeaseOffer(device.ID, queueItem.ID, *offered.ClaimExpiresAt, *offered.LeaseExpiresAt, serveErr); err != nil {
+							log.Printf("Queue response failure transition failed for device %d, item %d: %v", device.ID, queueItem.ID, err)
+						}
+					} else if !errors.Is(serveErr, service.ErrQueueStaleClaim) && !errors.Is(serveErr, service.ErrQueueStaleLease) {
+						h.failQueueClaim(device.ID, queueItem, serveErr)
+					}
+					return serveErr
+				}
+				if offered == nil {
+					return queueRetryableError(c, "queued image lease unavailable")
+				}
+				if err := h.queueService.ConfirmLeaseOffer(device.ID, queueItem.ID, *offered.ClaimExpiresAt, *offered.LeaseExpiresAt); err != nil {
+					log.Printf("Queue lease confirmation failed for device %d, item %d: %v", device.ID, queueItem.ID, err)
 					return err
 				}
-				// Record history while the image FK is still live. History is ancillary:
-				// a successful delivery still consumes the queue item if this write fails.
-				h.completeQueuedDelivery(device.ID, queueItem.ID, queueItem.ImageID)
+				h.completeConfigDelivery(delivery, nil)
 				return nil
 			}
 		}
 	}
+
+queueDone:
 
 	var img image.Image
 	var err error
@@ -555,12 +614,14 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 	return err
 }
 
-func (h *ImageHandler) completeQueuedDelivery(deviceID, itemID, imageID uint) {
-	if err := h.db.Create(&model.DeviceHistory{DeviceID: deviceID, ImageID: imageID, ServedAt: time.Now()}).Error; err != nil {
-		log.Printf("Queue history write failed for device %d, image %d: %v", deviceID, imageID, err)
-	}
-	if err := h.queueService.Remove(deviceID, itemID); err != nil {
-		log.Printf("Queue consumption cleanup failed for device %d, image %d: %v", deviceID, imageID, err)
+func queueRetryableError(c echo.Context, message string) error {
+	c.Response().Header().Set("Retry-After", "3")
+	return respondError(c, http.StatusServiceUnavailable, message)
+}
+
+func (h *ImageHandler) failQueueClaim(deviceID uint, item *model.DeviceQueueItem, deliveryErr error) {
+	if err := h.queueService.FailClaim(deviceID, item.ID, *item.ClaimExpiresAt, deliveryErr); err != nil {
+		log.Printf("Queue failure transition failed for device %d, item %d: %v", deviceID, item.ID, err)
 	}
 }
 
@@ -1069,7 +1130,8 @@ func (h *ImageHandler) serveProcessedImage(
 	lat, lon float64,
 	showCalendar bool,
 	dateFormat, firmwareVersion string,
-) error {
+	beforeWrite func() error,
+) (*configDelivery, error) {
 	// 2. Render layout (photo + overlay + calendar)
 	needsOverlay := showDate || showPhotoDate || showWeather || showCalendar
 	var imgWithOverlay image.Image
@@ -1126,7 +1188,7 @@ func (h *ImageHandler) serveProcessedImage(
 			DateFormat:    dateFormat,
 		})
 		if renderErr != nil {
-			return respondError(c, http.StatusInternalServerError, "render failed: "+renderErr.Error())
+			return nil, respondError(c, http.StatusInternalServerError, "render failed: "+renderErr.Error())
 		}
 	} else {
 		imgWithOverlay = img
@@ -1174,10 +1236,17 @@ func (h *ImageHandler) serveProcessedImage(
 	}
 
 	log.Println("Processing image with options: ", procOptions)
-	processedBytes, thumbBytes, err := h.processor.ProcessImage(imgWithOverlay, procOptions)
+	processImage := h.processImage
+	if processImage == nil && h.processor != nil {
+		processImage = h.processor.ProcessImage
+	}
+	if processImage == nil {
+		return nil, respondError(c, http.StatusInternalServerError, "processor service unavailable")
+	}
+	processedBytes, thumbBytes, err := processImage(imgWithOverlay, procOptions)
 	if err != nil {
 		fmt.Printf("Processor failed: %v\n", err)
-		return respondError(c, http.StatusInternalServerError, "processor service failed: "+err.Error())
+		return nil, respondError(c, http.StatusInternalServerError, "processor service failed: "+err.Error())
 	}
 
 	// 4. Cache Thumbnail & Set Headers
@@ -1203,7 +1272,11 @@ func (h *ImageHandler) serveProcessedImage(
 	if firmwareVersion == "" || !photoframe.SupportsEPDGZ(firmwareVersion) {
 		contentType = "image/png"
 	}
+	if beforeWrite != nil {
+		if err := beforeWrite(); err != nil {
+			return nil, err
+		}
+	}
 	err = c.Blob(http.StatusOK, contentType, processedBytes)
-	h.completeConfigDelivery(delivery, err)
-	return err
+	return delivery, err
 }

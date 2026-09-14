@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/db"
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/handler"
@@ -138,8 +139,8 @@ func main() {
 	// Resolve the JWT secret: env → persisted setting → freshly generated.
 	// A fresh install is secure with no configuration instead of falling back
 	// to a hard-coded default.
-	jwtSecret, jwtFromEnv := resolveJWTSecret(settingsService)
-	authService := service.NewAuthService(database, jwtSecret, !jwtFromEnv)
+	jwtSecret := resolveJWTSecret(settingsService)
+	authService := service.NewAuthService(database, jwtSecret)
 
 	// Schema is owned by golang-migrate (db/migrations); no AutoMigrate here.
 
@@ -267,6 +268,9 @@ func main() {
 
 	// Echo instance
 	e := echo.New()
+	// Firmware allows 120 seconds per image attempt. Keep server writes below
+	// the durable three-minute queue-offer recovery boundary.
+	e.Server.WriteTimeout = 150 * time.Second
 
 	// Middleware. Log ${path} (not ${uri}) so secrets in query strings — e.g.
 	// the device ?token= — never end up in access logs.
@@ -300,9 +304,9 @@ func main() {
 	// We need to support ?token= or Authorization header.
 
 	// Image Route (Protected)
-	e.GET("/image/:source", ih.ServeImage, authMiddleware)
+	e.GET("/image/:source", ih.ServeImage, authMiddleware, middleware.RequireBoundDevice)
 	// Unified endpoint: source resolved server-side from the device.
-	e.GET("/image", ih.ServeImage, authMiddleware)
+	e.GET("/image", ih.ServeImage, authMiddleware, middleware.RequireBoundDevice)
 
 	// Thumbnail likely needs protection too, or obscure IDs. For now, keep public as they are temporary?
 	// User said "access the /image/<source>/ endpoint. This one... people can't just access".
@@ -310,12 +314,11 @@ func main() {
 	e.GET("/served-image-thumbnail/:id", ih.GetServedImageThumbnail)
 
 	// Device Config Sync (Protected - device token or session auth)
-	e.POST("/api/device-config/sync", ih.SyncDeviceConfig, authMiddleware)
+	e.POST("/api/device-config/sync", ih.SyncDeviceConfig, authMiddleware, middleware.RequireBoundDevice)
 
 	// Protected API Routes
 	// 1. Protected API Group
-	protectedApi := e.Group("/api", authMiddleware)
-	protectedApi.GET("/settings", h.GetSettings)
+	protectedApi := e.Group("/api", authMiddleware, middleware.RequireAdministrator)
 	protectedApi.GET("/settings", h.GetSettings)
 	protectedApi.POST("/settings", h.UpdateSettings)
 
@@ -341,6 +344,7 @@ func main() {
 	protectedApi.PUT("/devices/:deviceId/queue/reorder", queueHandler.ReorderQueue)
 	protectedApi.GET("/devices/:deviceId/queue/status", queueHandler.QueueStatus)
 	protectedApi.POST("/devices/:deviceId/queue/check", queueHandler.CheckQueue)
+	protectedApi.POST("/devices/:deviceId/queue/:itemId/retry", queueHandler.RetryInvalid)
 
 	// Source albums (persisted), shared by device picker + gallery
 	protectedApi.GET("/albums", deviceHandler.ListAlbums)
@@ -492,16 +496,16 @@ func cleanupTempThumbnails(dataDir string) {
 // the token name to device names. This is idempotent and handles the migration
 // from tokens without device_id to tokens with device_id.
 // Ambiguous matches (multiple devices with the same name) are skipped.
-// resolveJWTSecret returns the JWT signing secret and whether it came from the
-// JWT_SECRET env var. Resolution order: env var → persisted setting → a freshly
+// resolveJWTSecret returns the JWT signing secret. Resolution order: env var ->
+// persisted setting -> a freshly
 // generated random secret (persisted). A fresh install is therefore secure with
 // no configuration instead of falling back to a hard-coded default.
-func resolveJWTSecret(settings *service.SettingsService) (string, bool) {
+func resolveJWTSecret(settings *service.SettingsService) string {
 	if env := strings.TrimSpace(os.Getenv("JWT_SECRET")); env != "" {
-		return env, true
+		return env
 	}
 	if v, err := settings.Get("jwt_secret"); err == nil && v != "" {
-		return v, false
+		return v
 	}
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
@@ -513,7 +517,7 @@ func resolveJWTSecret(settings *service.SettingsService) (string, bool) {
 	} else {
 		log.Println("auth: generated and persisted a new random JWT secret")
 	}
-	return secret, false
+	return secret
 }
 
 func backfillDeviceTokens(database *gorm.DB) {

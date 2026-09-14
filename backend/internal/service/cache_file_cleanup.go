@@ -13,6 +13,8 @@ import (
 
 var immichCacheFilesMu sync.Mutex
 
+var removeStagedCacheFilesFn = removeStagedCacheFiles
+
 type stagedCacheFile struct{ original, staged string }
 
 func stageCacheFiles(paths []string) ([]stagedCacheFile, error) {

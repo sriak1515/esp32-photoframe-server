@@ -83,7 +83,7 @@ func dateIntegrationDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Setting{}, &model.Image{}, &model.Album{}, &model.ImageAlbumMembership{}, &model.Device{}, &model.DeviceQueueItem{}, &model.ImmichCache{}))
+	require.NoError(t, db.AutoMigrate(&model.Setting{}, &model.Image{}, &model.Album{}, &model.ImageAlbumMembership{}, &model.Device{}, &model.DeviceQueueItem{}, &model.DeviceHistory{}, &model.ImmichCache{}))
 	return db
 }
 
@@ -120,7 +120,7 @@ func TestQueueReferenceProtectsOrphanAndFinalRemovalCleansCache(t *testing.T) {
 	date := "2024-01-01"
 	image := model.Image{Source: model.SourceImmich, ExternalID: "x", PhotoTakenDate: &date}
 	require.NoError(t, db.Create(&image).Error)
-	items, _, err := queue.Add(device.ID, []uint{image.ID})
+	items, _, _, err := queue.Add(device.ID, []uint{image.ID})
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	cachePath := filepath.Join(t.TempDir(), "cached.jpg")
@@ -145,14 +145,14 @@ func TestInvalidPolicyBlocksImmichQueueWithoutChangingEntries(t *testing.T) {
 	require.NoError(t, db.Create(&device).Error)
 	image := model.Image{Source: model.SourceImmich, ExternalID: "x"}
 	require.NoError(t, db.Create(&image).Error)
-	_, _, err := queue.Add(device.ID, []uint{image.ID})
+	_, _, _, err := queue.Add(device.ID, []uint{image.ID})
 	require.Error(t, err)
 	count, err := queue.Count(device.ID)
 	require.NoError(t, err)
 	require.Zero(t, count)
 }
 
-func TestQueueAwareGCIsImmichOnly(t *testing.T) {
+func TestQueueAwareGCProtectsEverySource(t *testing.T) {
 	db := dateIntegrationDB(t)
 	device := model.Device{Name: "frame"}
 	require.NoError(t, db.Create(&device).Error)
@@ -160,7 +160,7 @@ func TestQueueAwareGCIsImmichOnly(t *testing.T) {
 	require.NoError(t, db.Create(&image).Error)
 	require.NoError(t, db.Create(&model.DeviceQueueItem{DeviceID: device.ID, ImageID: image.ID, Position: 10, Source: image.Source}).Error)
 	gcOrphanImagesForSource(db, model.SourceSynologyPhotos)
-	require.ErrorIs(t, db.First(&model.Image{}, image.ID).Error, gorm.ErrRecordNotFound)
+	require.NoError(t, db.First(&model.Image{}, image.ID).Error)
 }
 
 func TestQueueCleanupSurfacesDatabaseErrors(t *testing.T) {
@@ -174,7 +174,7 @@ func TestQueueCleanupSurfacesDatabaseErrors(t *testing.T) {
 	date := "2024-01-01"
 	image := model.Image{Source: model.SourceImmich, ExternalID: "x", PhotoTakenDate: &date}
 	require.NoError(t, db.Create(&image).Error)
-	items, _, err := queue.Add(device.ID, []uint{image.ID})
+	items, _, _, err := queue.Add(device.ID, []uint{image.ID})
 	require.NoError(t, err)
 	cachePath := filepath.Join(t.TempDir(), "required.jpg")
 	require.NoError(t, os.WriteFile(cachePath, []byte("required"), 0600))
@@ -218,9 +218,9 @@ func TestFinalQueueReferenceControlsCleanup(t *testing.T) {
 	date := "2024-01-01"
 	image := model.Image{Source: model.SourceImmich, ExternalID: "shared", PhotoTakenDate: &date}
 	require.NoError(t, db.Create(&image).Error)
-	i1, _, err := queue.Add(d1.ID, []uint{image.ID})
+	i1, _, _, err := queue.Add(d1.ID, []uint{image.ID})
 	require.NoError(t, err)
-	_, _, err = queue.Add(d2.ID, []uint{image.ID})
+	_, _, _, err = queue.Add(d2.ID, []uint{image.ID})
 	require.NoError(t, err)
 	require.NoError(t, queue.Remove(d1.ID, i1[0].ID))
 	require.NoError(t, db.First(&model.Image{}, image.ID).Error)
@@ -240,7 +240,7 @@ func TestQueueCleanupFilesystemFailurePreservesDatabase(t *testing.T) {
 	date := "2024-01-01"
 	image := model.Image{Source: model.SourceImmich, ExternalID: "x", PhotoTakenDate: &date}
 	require.NoError(t, db.Create(&image).Error)
-	items, _, err := queue.Add(device.ID, []uint{image.ID})
+	items, _, _, err := queue.Add(device.ID, []uint{image.ID})
 	require.NoError(t, err)
 	directory := filepath.Join(t.TempDir(), "not-a-file")
 	require.NoError(t, os.Mkdir(directory, 0o755))

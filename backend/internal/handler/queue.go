@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/model"
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/service"
@@ -13,13 +15,44 @@ import (
 )
 
 type QueueHandler struct {
-	db          *gorm.DB
-	queue       *service.QueueService
-	immichCache *service.ImmichCacheService
+	db            *gorm.DB
+	queue         *service.QueueService
+	immichCache   *service.ImmichCacheService
+	precacheMu    sync.Mutex
+	precaching    map[uint][]uint
+	precacheImage func(uint) error
+}
+
+type queueLifecycleResponse struct {
+	ID             uint       `json:"id"`
+	ImageID        uint       `json:"image_id"`
+	Position       int        `json:"position"`
+	Source         string     `json:"source"`
+	State          string     `json:"state"`
+	ClaimExpiresAt *time.Time `json:"claim_expires_at,omitempty"`
+	LeaseExpiresAt *time.Time `json:"lease_expires_at,omitempty"`
+	AttemptCount   int        `json:"attempt_count"`
+	NextAttemptAt  *time.Time `json:"next_attempt_at,omitempty"`
+	LastAttemptAt  *time.Time `json:"last_attempt_at,omitempty"`
+	LastErrorCode  *string    `json:"last_error_code,omitempty"`
+	LastError      *string    `json:"last_error,omitempty"`
+}
+
+func queueLifecycle(item *model.DeviceQueueItem) queueLifecycleResponse {
+	return queueLifecycleResponse{
+		ID: item.ID, ImageID: item.ImageID, Position: item.Position, Source: item.Source, State: item.State,
+		ClaimExpiresAt: item.ClaimExpiresAt, LeaseExpiresAt: item.LeaseExpiresAt,
+		AttemptCount: item.AttemptCount, NextAttemptAt: item.NextAttemptAt, LastAttemptAt: item.LastAttemptAt,
+		LastErrorCode: item.LastErrorCode, LastError: item.LastError,
+	}
 }
 
 func NewQueueHandler(db *gorm.DB, queue *service.QueueService, immichCache *service.ImmichCacheService) *QueueHandler {
-	return &QueueHandler{db: db, queue: queue, immichCache: immichCache}
+	h := &QueueHandler{db: db, queue: queue, immichCache: immichCache, precaching: make(map[uint][]uint)}
+	if immichCache != nil {
+		h.precacheImage = immichCache.CacheForQueue
+	}
+	return h
 }
 
 func (h *QueueHandler) getDeviceID(c echo.Context) (uint, error) {
@@ -51,13 +84,22 @@ func (h *QueueHandler) ListQueue(c echo.Context) error {
 
 	// Build response with thumbnail URLs
 	type QueueItemResponse struct {
-		ID        uint        `json:"id"`
-		DeviceID  uint        `json:"device_id"`
-		ImageID   uint        `json:"image_id"`
-		Position  int         `json:"position"`
-		Source    string      `json:"source"`
-		CreatedAt interface{} `json:"created_at"`
-		Image     *struct {
+		ID             uint        `json:"id"`
+		DeviceID       uint        `json:"device_id"`
+		ImageID        uint        `json:"image_id"`
+		Position       int         `json:"position"`
+		Source         string      `json:"source"`
+		CreatedAt      interface{} `json:"created_at"`
+		State          string      `json:"state"`
+		ClaimExpiresAt *time.Time  `json:"claim_expires_at,omitempty"`
+		LeaseExpiresAt *time.Time  `json:"lease_expires_at,omitempty"`
+		AttemptCount   int         `json:"attempt_count"`
+		NextAttemptAt  *time.Time  `json:"next_attempt_at,omitempty"`
+		LastAttemptAt  *time.Time  `json:"last_attempt_at,omitempty"`
+		LastErrorCode  *string     `json:"last_error_code,omitempty"`
+		LastError      *string     `json:"last_error,omitempty"`
+		CacheStatus    string      `json:"cache_status,omitempty"`
+		Image          *struct {
 			ID           uint   `json:"id"`
 			Caption      string `json:"caption"`
 			Orientation  string `json:"orientation"`
@@ -74,6 +116,9 @@ func (h *QueueHandler) ListQueue(c echo.Context) error {
 			Position:  item.Position,
 			Source:    item.Source,
 			CreatedAt: item.CreatedAt,
+			State:     item.State, ClaimExpiresAt: item.ClaimExpiresAt, LeaseExpiresAt: item.LeaseExpiresAt,
+			AttemptCount: item.AttemptCount, NextAttemptAt: item.NextAttemptAt, LastAttemptAt: item.LastAttemptAt,
+			LastErrorCode: item.LastErrorCode, LastError: item.LastError,
 		}
 		if item.Image != nil {
 			qi.Image = &struct {
@@ -87,6 +132,9 @@ func (h *QueueHandler) ListQueue(c echo.Context) error {
 				Orientation:  item.Image.Orientation,
 				ThumbnailURL: fmt.Sprintf("/api/gallery/thumbnail/%d", item.Image.ID),
 			}
+		}
+		if item.Source == model.SourceImmich && h.immichCache != nil {
+			qi.CacheStatus = h.immichCache.QueueCacheStatus(item.ImageID)
 		}
 		respItems = append(respItems, qi)
 	}
@@ -122,7 +170,7 @@ func (h *QueueHandler) AddToQueue(c echo.Context) error {
 		return respondError(c, http.StatusBadRequest, "image_ids is required")
 	}
 
-	items, warning, err := h.queue.Add(deviceID, req.ImageIDs)
+	items, rejected, warning, err := h.queue.Add(deviceID, req.ImageIDs)
 	if err != nil {
 		var configErr *service.ImmichDatePolicyError
 		if errors.As(err, &configErr) {
@@ -131,20 +179,12 @@ func (h *QueueHandler) AddToQueue(c echo.Context) error {
 		return respondError(c, http.StatusInternalServerError, "failed to add to queue")
 	}
 
-	// Pre-cache Immich images when cache mode is off so queued items are
-	// available even if the Immich server goes offline before consumption.
-	if h.immichCache != nil && !h.immichCache.Enabled() {
-		for _, item := range items {
-			if item.Source == model.SourceImmich {
-				go h.immichCache.CacheForQueue(item.ImageID)
-			}
-		}
-	}
+	h.precache(items)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"added":              items,
-		"skipped_duplicates": []interface{}{},
-		"warning":            warning,
+		"added":    items,
+		"rejected": rejected,
+		"warning":  warning,
 	})
 }
 
@@ -162,7 +202,12 @@ func (h *QueueHandler) RemoveFromQueue(c echo.Context) error {
 	}
 
 	if err := h.queue.Remove(deviceID, uint(itemID)); err != nil {
-		if errors.Is(err, service.ErrQueueItemNotFound) { return respondError(c, http.StatusNotFound, err.Error()) }
+		if errors.Is(err, service.ErrQueueItemNotFound) {
+			return respondError(c, http.StatusNotFound, err.Error())
+		}
+		if errors.Is(err, service.ErrQueueConflict) {
+			return respondError(c, http.StatusConflict, err.Error())
+		}
 		return respondError(c, http.StatusInternalServerError, err.Error())
 	}
 
@@ -178,6 +223,9 @@ func (h *QueueHandler) ClearQueue(c echo.Context) error {
 
 	count, err := h.queue.Clear(deviceID)
 	if err != nil {
+		if errors.Is(err, service.ErrQueueConflict) {
+			return respondError(c, http.StatusConflict, err.Error())
+		}
 		return respondError(c, http.StatusInternalServerError, err.Error())
 	}
 
@@ -200,11 +248,14 @@ func (h *QueueHandler) ReorderQueue(c echo.Context) error {
 		return respondError(c, http.StatusBadRequest, "invalid request body")
 	}
 
-	if len(req.ItemIDs) == 0 {
+	if req.ItemIDs == nil {
 		return respondError(c, http.StatusBadRequest, "item_ids is required")
 	}
 
 	if err := h.queue.Reorder(deviceID, req.ItemIDs); err != nil {
+		if errors.Is(err, service.ErrQueueConflict) {
+			return respondError(c, http.StatusConflict, err.Error())
+		}
 		return respondError(c, http.StatusInternalServerError, "failed to reorder queue")
 	}
 
@@ -223,20 +274,66 @@ func (h *QueueHandler) QueueStatus(c echo.Context) error {
 		return respondError(c, http.StatusInternalServerError, "failed to count queue")
 	}
 
-	// Get next image ID if queue is not empty
+	items, _, err := h.queue.List(deviceID)
+	if err != nil {
+		return respondError(c, http.StatusInternalServerError, "failed to read queue status")
+	}
 	var nextImageID *uint
-	if count > 0 {
-		next, err := h.queue.GetNextForDevice(deviceID)
-		if err == nil && next != nil {
-			nextImageID = &next.ImageID
+	var nextItem *queueLifecycleResponse
+	var readyItem *queueLifecycleResponse
+	var readyImageID *uint
+	stateCounts := map[string]int{}
+	now := time.Now()
+	for i := range items {
+		item := &items[i]
+		stateCounts[item.State]++
+		if nextItem == nil && (item.State == model.QueueStateClaimed || item.State == model.QueueStateLeased) {
+			lifecycle := queueLifecycle(item)
+			nextItem, nextImageID = &lifecycle, &item.ImageID
+		} else if readyItem == nil && (item.State == model.QueueStatePending || (item.State == model.QueueStateFailed && (item.NextAttemptAt == nil || !item.NextAttemptAt.After(now)))) {
+			lifecycle := queueLifecycle(item)
+			readyItem, readyImageID = &lifecycle, &item.ImageID
 		}
+	}
+	if nextItem == nil {
+		nextItem, nextImageID = readyItem, readyImageID
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"count":         count,
 		"soft_limit":    500,
 		"next_image_id": nextImageID,
+		"next_item":     nextItem,
+		"state_counts":  stateCounts,
 	})
+}
+
+func (h *QueueHandler) precache(items []model.DeviceQueueItem) {
+	if h.precacheImage == nil {
+		return
+	}
+	for _, item := range items {
+		if item.Source != model.SourceImmich {
+			continue
+		}
+		h.precacheMu.Lock()
+		waiting, running := h.precaching[item.ImageID]
+		h.precaching[item.ImageID] = append(waiting, item.ID)
+		h.precacheMu.Unlock()
+		if running {
+			continue
+		}
+		go func(imageID uint) {
+			err := h.precacheImage(imageID)
+			h.precacheMu.Lock()
+			itemIDs := h.precaching[imageID]
+			delete(h.precaching, imageID)
+			h.precacheMu.Unlock()
+			for _, itemID := range itemIDs {
+				h.queue.RecordPrecacheResult(itemID, err)
+			}
+		}(item.ImageID)
+	}
 }
 
 // CheckQueue checks if images are already in the queue.
@@ -262,7 +359,37 @@ func (h *QueueHandler) CheckQueue(c echo.Context) error {
 		return respondError(c, http.StatusInternalServerError, "failed to check queue")
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"queued": queued,
-	})
+	items, _, err := h.queue.List(deviceID)
+	if err != nil {
+		return respondError(c, http.StatusInternalServerError, "failed to check queue")
+	}
+	requested := make(map[uint]bool, len(req.ImageIDs))
+	for _, id := range req.ImageIDs {
+		requested[id] = true
+	}
+	occurrences := make([]queueLifecycleResponse, 0)
+	for _, item := range items {
+		if requested[item.ImageID] && item.State != model.QueueStateDelivered {
+			occurrences = append(occurrences, queueLifecycle(&item))
+		}
+	}
+	return c.JSON(http.StatusOK, map[string]interface{}{"queued": queued, "occurrences": occurrences})
+}
+
+func (h *QueueHandler) RetryInvalid(c echo.Context) error {
+	deviceID, err := h.getDeviceID(c)
+	if err != nil {
+		return respondError(c, http.StatusBadRequest, "invalid device id")
+	}
+	itemID, err := strconv.ParseUint(c.Param("itemId"), 10, 64)
+	if err != nil {
+		return respondError(c, http.StatusBadRequest, "invalid item id")
+	}
+	if err := h.queue.RetryInvalid(deviceID, uint(itemID)); err != nil {
+		if errors.Is(err, service.ErrQueueItemNotFound) {
+			return respondError(c, http.StatusNotFound, err.Error())
+		}
+		return respondError(c, http.StatusInternalServerError, err.Error())
+	}
+	return c.NoContent(http.StatusNoContent)
 }

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/aitjcize/esp32-photoframe-server/backend/internal/middleware"
 	"github.com/aitjcize/esp32-photoframe-server/backend/internal/model"
 	"github.com/labstack/echo/v4"
 	"gorm.io/driver/sqlite"
@@ -40,7 +41,7 @@ func TestAuthoritativeSyncIgnoresNewerDeviceState(t *testing.T) {
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
-	c.Set("device_id", device.ID)
+	setDevicePrincipal(c, device.ID)
 	if err := h.SyncDeviceConfig(c); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +68,7 @@ func TestNonAuthoritativeSyncPreservesServerOnlyProcessingKeys(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/device-config/sync", strings.NewReader(`{"processing_settings":{"exposure":2},"config_last_updated":20}`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	c := e.NewContext(req, httptest.NewRecorder())
-	c.Set("device_id", device.ID)
+	setDevicePrincipal(c, device.ID)
 	if err := h.SyncDeviceConfig(c); err != nil {
 		t.Fatal(err)
 	}
@@ -78,6 +79,13 @@ func TestNonAuthoritativeSyncPreservesServerOnlyProcessingKeys(t *testing.T) {
 	if !strings.Contains(got.DeviceProcessingSettings, `"converter":"server"`) || !strings.Contains(got.DeviceProcessingSettings, `"exposure":2`) {
 		t.Fatalf("processing merge = %s", got.DeviceProcessingSettings)
 	}
+}
+
+func setDevicePrincipal(c echo.Context, deviceID uint) {
+	middleware.SetPrincipal(c, middleware.AuthenticatedPrincipal{
+		Type:     middleware.PrincipalDevice,
+		DeviceID: &deviceID,
+	})
 }
 
 func TestAuthoritativeDeferredPayloadClearsMatchingPendingGeneration(t *testing.T) {

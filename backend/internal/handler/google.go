@@ -159,51 +159,6 @@ func (h *GoogleHandler) PollPickerProgress(c echo.Context) error {
 	return c.JSON(http.StatusOK, progress)
 }
 
-func (h *GoogleHandler) DeleteAllGooglePhotos(c echo.Context) error {
-	var items []model.Image
-	// Only fetch Google Photos
-	if err := h.db.Where("source = ?", model.SourceGooglePhotos).Find(&items).Error; err != nil {
-		return respondError(c, http.StatusInternalServerError, "failed to fetch photos")
-	}
-
-	// Delete local files
-	for _, item := range items {
-		if item.FilePath != "" {
-			os.Remove(item.FilePath)
-		}
-	}
-
-	// Delete from DB
-	if err := h.db.Where("source = ?", model.SourceGooglePhotos).Delete(&model.Image{}).Error; err != nil {
-		return respondError(c, http.StatusInternalServerError, "failed to delete photos from db")
-	}
-
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"status":  "deleted",
-		"message": fmt.Sprintf("Deleted %d Google photos", len(items)),
-	})
-}
-
-func (h *GoogleHandler) DeleteGooglePhoto(c echo.Context) error {
-	id := c.Param("id")
-	var item model.Image
-	if err := h.db.Where("source = ?", model.SourceGooglePhotos).First(&item, id).Error; err != nil {
-		return respondError(c, http.StatusNotFound, "photo not found")
-	}
-
-	// Delete file
-	if item.FilePath != "" {
-		os.Remove(item.FilePath)
-	}
-
-	// Delete from DB
-	if err := h.db.Delete(&item).Error; err != nil {
-		return respondError(c, http.StatusInternalServerError, "failed to delete photo from db")
-	}
-
-	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
-}
-
 func (h *GoogleHandler) GetGooglePhotoThumbnail(c echo.Context) error {
 	id := c.Param("id")
 	var item model.Image

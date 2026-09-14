@@ -129,10 +129,11 @@ const (
 )
 
 type DeviceHistory struct {
-	ID       uint      `gorm:"primaryKey" json:"id"`
-	DeviceID uint      `gorm:"index" json:"device_id"` // Foreign key to Device
-	ImageID  uint      `json:"image_id"`
-	ServedAt time.Time `json:"served_at"`
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	DeviceID    uint      `gorm:"index" json:"device_id"` // Foreign key to Device
+	ImageID     uint      `json:"image_id"`
+	QueueItemID *uint     `gorm:"uniqueIndex" json:"queue_item_id,omitempty"`
+	ServedAt    time.Time `json:"served_at"`
 }
 
 type UserSession struct {
@@ -206,19 +207,37 @@ type GenerativeState struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// DeviceQueueItem represents a single image in a device's play queue.
-// Items are served FIFO (lowest position first) and removed after serving.
+const (
+	QueueStatePending            = "pending"
+	QueueStateClaimed            = "claimed"
+	QueueStateLeased             = "leased"
+	QueueStateFailed             = "failed"
+	QueueStatePermanentlyInvalid = "permanently_invalid"
+	QueueStateDelivered          = "delivered"
+)
+
+// DeviceQueueItem represents one occurrence in a device's image queue.
 type DeviceQueueItem struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	DeviceID  uint      `gorm:"not null;index:idx_device_queue_device_position,priority:1;index:idx_device_queue_device_image,priority:1" json:"device_id"`
-	ImageID   uint      `gorm:"not null;index:idx_device_queue_device_image,priority:2" json:"image_id"`
-	Position  int       `gorm:"not null;default:0;index:idx_device_queue_device_position,priority:2" json:"position"`
-	Source    string    `gorm:"not null;default:''" json:"source"`
-	CreatedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
+	ID             uint       `gorm:"primaryKey" json:"id"`
+	DeviceID       uint       `gorm:"not null;index:idx_device_queue_device_position,priority:1;index:idx_device_queue_device_image,priority:1" json:"device_id"`
+	ImageID        uint       `gorm:"not null;index:idx_device_queue_device_image,priority:2" json:"image_id"`
+	Position       int        `gorm:"not null;default:0;index:idx_device_queue_device_position,priority:2" json:"position"`
+	Source         string     `gorm:"not null;default:''" json:"source"`
+	State          string     `gorm:"not null;default:pending" json:"state"`
+	ClaimExpiresAt *time.Time `json:"claim_expires_at,omitempty"`
+	LeaseExpiresAt *time.Time `json:"lease_expires_at,omitempty"`
+	AttemptCount   int        `gorm:"not null;default:0" json:"attempt_count"`
+	NextAttemptAt  *time.Time `json:"next_attempt_at,omitempty"`
+	LastAttemptAt  *time.Time `json:"last_attempt_at,omitempty"`
+	LastErrorCode  *string    `json:"last_error_code,omitempty"`
+	LastError      *string    `json:"last_error,omitempty"`
+	CreatedAt      time.Time  `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
 
 	// Relations
 	Device Device `gorm:"foreignKey:DeviceID" json:"device,omitempty"`
 	Image  *Image `gorm:"foreignKey:ImageID" json:"image,omitempty"`
+	// PolicyValidated is an in-memory claim snapshot, never persisted or exposed.
+	PolicyValidated bool `gorm:"-" json:"-"`
 }
 
 func (DeviceQueueItem) TableName() string {

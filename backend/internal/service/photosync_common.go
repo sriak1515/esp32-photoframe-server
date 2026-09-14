@@ -30,7 +30,12 @@ func SetThumbnailDir(dir string) { thumbnailDir = dir }
 // memberships drop via ON DELETE CASCADE (this is an Unscoped hard delete, so
 // the cascade fires).
 func clearSourcePhotos(db *gorm.DB, source string) error {
-	if err := db.Unscoped().Where("source = ?", source).
+	query := db.Unscoped().Where("source = ?", source)
+	if db.Migrator().HasTable(&model.DeviceQueueItem{}) {
+		protected := db.Model(&model.DeviceQueueItem{}).Select("image_id").Where("state <> ?", model.QueueStateDelivered)
+		query = query.Where("id NOT IN (?)", protected)
+	}
+	if err := query.
 		Delete(&model.Image{}).Error; err != nil {
 		return err
 	}
@@ -49,8 +54,8 @@ func gcOrphanImagesForSource(db *gorm.DB, source string) {
 	}
 	sub := db.Model(&model.ImageAlbumMembership{}).Select("image_id")
 	query := db.Unscoped().Where("source = ? AND id NOT IN (?)", source, sub)
-	if source == model.SourceImmich && db.Migrator().HasTable(&model.DeviceQueueItem{}) {
-		queueSub := db.Model(&model.DeviceQueueItem{}).Select("image_id")
+	if db.Migrator().HasTable(&model.DeviceQueueItem{}) {
+		queueSub := db.Model(&model.DeviceQueueItem{}).Select("image_id").Where("state <> ?", model.QueueStateDelivered)
 		query = query.Where("id NOT IN (?)", queueSub)
 	}
 	if source != model.SourceImmich {
@@ -65,7 +70,7 @@ func gcOrphanImagesForSource(db *gorm.DB, source string) {
 		var images []model.Image
 		txQuery := tx.Unscoped().Where("source = ? AND id NOT IN (?)", source, tx.Model(&model.ImageAlbumMembership{}).Select("image_id"))
 		if tx.Migrator().HasTable(&model.DeviceQueueItem{}) {
-			txQuery = txQuery.Where("id NOT IN (?)", tx.Model(&model.DeviceQueueItem{}).Select("image_id"))
+			txQuery = txQuery.Where("id NOT IN (?)", tx.Model(&model.DeviceQueueItem{}).Select("image_id").Where("state <> ?", model.QueueStateDelivered))
 		}
 		if err := txQuery.Find(&images).Error; err != nil {
 			return err

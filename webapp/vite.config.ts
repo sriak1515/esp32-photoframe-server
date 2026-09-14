@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import vue from '@vitejs/plugin-vue';
 import vuetify from 'vite-plugin-vuetify';
 
@@ -6,6 +6,13 @@ import vuetify from 'vite-plugin-vuetify';
 export default defineConfig({
   plugins: [vue(), vuetify({ autoImport: true })],
   base: './',
+  test: {
+    server: {
+      deps: {
+        inline: ['vuetify'],
+      },
+    },
+  },
   server: {
     proxy: {
       '/api': {
